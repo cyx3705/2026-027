@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "template": {
+    "isTemplate": false,
+    "source": "0000-001-AIReady",
+    "strictValidationArgument": "-Instantiation"
+  },
+  "project": {
+    "id": "2026-027",
+    "name": "HistoryPortunus",
+    "title": "HistoryPortunus 对外传输",
+    "kind": [
+      "software",
+      "tooling",
+      "transport-module"
+    ],
+    "status": "active",
+    "version": "0.1.0",
+    "branch": "main"
+  },
+  "paths": {
+    "activeRoots": [
+      "b-Code-Portunus",
+      "b-Code-Verify",
+      "b-Office/current",
+      "b-Office/package"
+    ],
+    "sourceRoots": [
+      "b-Code-Portunus",
+      "b-Code-Verify"
+    ],
+    "generatedRoots": [
+      "b-Code-Portunus/**/bin",
+      "b-Code-Portunus/**/obj",
+      "b-Code-Verify/**/bin",
+      "b-Code-Verify/**/obj",
+      "z-Publish"
+    ],
+    "archiveRoots": [
+      "b-Office/history",
+      "z-Publish/history"
+    ],
+    "releaseRoots": [
+      "z-Publish"
+    ],
+    "allowedRootDirectoryPrefixes": [
+      "a-",
+      "b-",
+      "z-"
+    ]
+  },
+  "documents": {
+    "center": "b-Office/文档中心.md",
+    "structure": "b-Office/文档中心.md",
+    "overview": "b-Office/current/项目概览.md",
+    "technicalContract": "b-Office/current/技术合同.md",
+    "decisions": "b-Office/current/有效决策.md",
+    "verification": "b-Office/current/验证合同.md"
+  },
+  "commands": {
+    "setup": "dotnet restore .\\HistoryPortunus.sln --locked-mode -p:NuGetAudit=false",
+    "build": "dotnet build .\\HistoryPortunus.sln -c Release --no-restore -p:NuGetAudit=false",
+    "test": "dotnet test .\\b-Code-Verify\\Contracts\\Contracts.csproj -c Release -p:NuGetAudit=false",
+    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-Portunus\\eng\\Test-QualityGate.ps1",
+    "run": null,
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-Portunus\\eng\\Build-HistoryPortunusPackage.ps1"
+  },
+  "externalDependencies": [
+    "HistoryVulcan >= 4.2.0 host snapshot from ../2026-023-HistoryVulcan/z-Publish/host",
+    ".NET 8 SDK"
+  ],
+  "contextExclusions": [
+    "b-Office/history/**",
+    "z-Publish/**",
+    "**/bin/**",
+    "**/obj/**",
+    "**/node_modules/**",
+    "**/.vs/**",
+    "artifacts/**"
+  ]
+}

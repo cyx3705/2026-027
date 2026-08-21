@@ -1,0 +1,194 @@
+<?xml version="1.0"?>
+<doc>
+    <assembly>
+        <name>HistoryPortunus</name>
+    </assembly>
+    <members>
+        <member name="T:HistoryPortunus.ModuleInfo">
+            <summary>
+            模块身份。宿主按**全名**鸭子类型识别 <c>BaseVariable.ModuleInfoBase</c> 的公开非抽象子类，
+            不靠引用相等，所以这个类必须存在且可被反射构造。
+            </summary>
+        </member>
+        <member name="P:HistoryPortunus.ModuleInfo.ModuleName">
+            <summary>
+            必须显式覆盖：<see cref="P:BaseVariable.ModuleInfoBase.ModuleName"/> 的缺省值是程序集名，
+            而它同时是**指令域**。程序集名与域一旦分家，域就会跟着程序集名跑。
+            </summary>
+        </member>
+        <member name="P:HistoryPortunus.ModuleInfo.CommandPrefix">
+            <summary>指令域前缀。</summary>
+        </member>
+        <member name="P:HistoryPortunus.ModuleInfo.Version">
+            <summary>
+            版本取自程序集而非字面量。宿主装载时比对 manifest 与本类的版本，
+            两者不一致会**静默跳过整个模块**——只在日志留一行 module.discovery 警告。
+            （HistoryMercury 4.2.0 因漏改字面量复现过一次，故收敛为单一来源。）
+            </summary>
+        </member>
+        <member name="P:HistoryPortunus.ModuleInfo.MainClassType">
+            <summary>指令一律经 <c>IModuleContext.RegisterCommands</c> 注册，不走反射投影。</summary>
+        </member>
+        <member name="T:HistoryPortunus.PortunusComposition">
+             <summary>
+             模块装配入口。两条对外航线（MCP、回环 Web）都在这里起、在这里收。
+             </summary>
+             <remarks>
+             **本模块不产生任何业务能力**，它只把宿主注册表投影给进程外的消费者。
+             判断一段代码该不该进这个仓，用这条：它是否只是「把已有指令换一种协议说出去」。
+             是——进来；不是——它属于别处。
+            
+             决定「哪些指令可以被外部调用」的 <c>McpExposurePolicy</c> **留在宿主**：
+             门搬走，锁留下。否则换一个模块就能给自己放权。
+            
+             装载失败不影响自救：把好包拷进模块槽，宿主的文件监视会自己重载——
+             恢复路径是文件系统，不是传输。
+             </remarks>
+        </member>
+        <member name="P:HistoryPortunus.PortunusComposition.ServiceId">
+             <summary>
+             服务标识必须逐字保持 <c>&lt;应用名&gt;.service</c>。
+            
+             它不只是日志里的一个名字：默认端口由它按 FNV 稳定派生（见
+             <c>LoopbackHttpTransport.DerivePort</c>），改动一个字符就会让端口整体漂移，
+             已经握着旧 endpoint.json 的客户端会连到一个没人监听的端口上。
+             迁出宿主前它由 <c>ServiceComposer</c> 以同样的方式拼出。
+             </summary>
+        </member>
+        <member name="M:HistoryPortunus.PortunusComposition.Attach(HistoryVulcan.Core.Modules.IModuleContext)">
+            <summary>宿主在装载时注入上下文：权威指令总线、设置、日志与数据根目录。</summary>
+        </member>
+        <member name="M:HistoryPortunus.PortunusComposition.Dispose">
+             <summary>
+             交还本模块占用的进程级资源。
+            
+             宿主在每轮热重载的拆除阶段调用它，且**早于**新快照的 <see cref="M:HistoryPortunus.PortunusComposition.Attach(HistoryVulcan.Core.Modules.IModuleContext)"/>，
+             所以端口先释放再重新绑定，不会退到下一个端口。
+             没有这一步，被遗弃的监听器会继续占着端口、继续持有活的指令总线引用——
+             每重载一次就多一个仍能执行任意指令的入口。
+             </summary>
+        </member>
+        <member name="P:HistoryPortunus.PortunusComposition.Context">
+            <summary>当前生效的宿主上下文；未装载时为 null。</summary>
+        </member>
+        <member name="P:HistoryPortunus.PortunusComposition.Web">
+            <summary>当前 Web 网关；未启动时为 null。</summary>
+        </member>
+        <member name="T:HistoryPortunus.Web.EndpointDescriptor">
+             <summary>
+             <c>endpoint.json</c> 的读写。Web 航线的唯一通告方式。
+             </summary>
+             <remarks>
+             迁出宿主前由 <c>ServiceHost.WriteEndpoint</c> 负责，随宿主进程生存；现在归本模块，
+             随模块快照生存。含义因此变得更准确：**文件在，说明这条航线此刻真的开着**。
+            
+             <c>accessToken</c> 是本次监听的一次性凭据（见 <c>WebGateway.AccessToken</c>）。
+             它使本文件从「端口通告」变成凭据载体：文件位于用户 AppData 下，
+             其读取权限就是这条边界的实际强度。
+            
+             每轮热重载都会换一枚新令牌并重写本文件，所以客户端**必须每次调用前重读**，
+             不能把令牌缓存在自己的进程里。
+             </remarks>
+        </member>
+        <member name="T:HistoryPortunus.Web.LoopbackHttpTransport">
+             <summary>
+             两个本机网关共用的 HttpListener 传输层零件。
+            
+             收拢的是传输层，不是网关：两者仍各自持有自己的 <see cref="T:System.Net.HttpListener"/> 与端口，
+             停止一个不影响另一个。不合并监听器的完整论证见 DEC-047 与 REQ-NET-001。
+            
+             **本文件在宿主里还有一份同源副本**，因为 MCP 网关尚未搬迁（迁移第 2 轮），
+             而宿主侧它是 <c>internal</c>，模块够不着。两条出路都比现在差：
+             提公开面等于为一个即将删除的类型永久扩大宿主契约，再在第 2 轮补 <c>*REMOVED*</c>；
+             现在就整体搬走则会留下宿主引用模块的倒挂依赖。
+             因此接受一轮的重复，**第 2 轮搬完 MCP 后删除宿主那一份**，此注释一并撤销。
+             </summary>
+        </member>
+        <member name="F:HistoryPortunus.Web.LoopbackHttpTransport.LoopbackAddress">
+            <summary>网关只接受回环；前缀挂根路径，由各网关自行校验具体路由。</summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.LoopbackHttpTransport.DerivePort(System.String,System.Int32,System.Int32)">
+            <summary>
+            按应用名稳定派生默认端口。同一台机器上的同名应用总是落到同一个端口，
+            不同应用错开，避免多宿主并存时互相抢占。
+            </summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.LoopbackHttpTransport.ReadBearer(System.Net.HttpListenerRequest)">
+            <summary>读取 <c>Authorization: Bearer</c> 值；缺失或格式不符返回 null。</summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.LoopbackHttpTransport.FixedEquals(System.String,System.String)">
+            <summary>定长时间比较，避免按字符提前返回泄露令牌前缀。</summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.LoopbackHttpTransport.TryClose(System.Net.HttpListenerContext,System.Int32)">
+            <summary>
+            只置状态码并关闭响应。客户端可能已经断开，此时 <c>Close</c> 会抛
+            <see cref="T:System.ObjectDisposedException"/> 或 <see cref="T:System.Net.HttpListenerException"/>，
+            都属于正常竞态，不应冒泡成请求处理异常。
+            </summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.LoopbackHttpTransport.AcceptLoopAsync(System.Net.HttpListener,System.Threading.CancellationToken,System.Func{System.Net.HttpListenerContext,System.Threading.Tasks.Task},System.Action{System.String},System.Action{System.Net.HttpListenerContext,System.Exception})">
+            <summary>
+            接受循环。停机（取消或监听器关闭）静默退出；单次接受失败只记警告并继续，
+            不让一个坏连接终结整个循环。每个请求在独立任务上处理，处理异常由 <paramref name="handle"/>
+            的调用方兜底为 500。
+            </summary>
+        </member>
+        <member name="T:HistoryPortunus.Web.WebGateway">
+             <summary>
+             命令总线的本机 HTTP/WS 接入点，只服务同机前端 Shell。
+            
+             3.13.0 删除局域网面（DEC-045）：绑定地址、设备鉴权/配对、令牌、CORS 与限流一并移除。
+             那套机制两年内没有任何生产装配点——<c>IDeviceAuthenticationProvider</c> 只在测试里被赋值，
+             <c>WebCommands</c> 从未被注册，确认档甚至读的是一个没人写入的 <c>lan.confirm</c> 键。
+             保留它只会让每次公开面评审背着一份不可达的安全边界。真要局域网访问时，
+             基于合并后的单网关重写，而不是复活这一套。
+             </summary>
+        </member>
+        <member name="F:HistoryPortunus.Web.WebGateway.GatewayProtocolVersion">
+            <summary>网关线协议版本；健康检查回报，前端据此拒绝不兼容的后台。</summary>
+        </member>
+        <member name="F:HistoryPortunus.Web.WebGateway.LoopbackAddress">
+            <summary>网关固定绑定的本机地址；3.13.0 起不可配置。</summary>
+        </member>
+        <member name="P:HistoryPortunus.Web.WebGateway.AccessToken">
+             <summary>
+             本次监听的一次性凭据，由 <see cref="M:HistoryPortunus.Web.WebGateway.Start(System.Nullable{System.Int32})"/> 用密码学随机数生成，`Stop` 后作废。
+            
+             存在的理由：回环本身不构成边界。删除局域网面前后，只要带上
+             <c>X-HistoryVulcan-Client: Shell</c> 头，任何本机进程都能在权威总线上执行任意命令——
+             包括 MCP 侧硬排除的 `vulcan.app.quit`、`vulcan.module.install/remove` 和全部
+             `vulcan.mcp.*`。也就是说 MCP 的策略、隐藏与危险确认在同机范围内可被整体绕过。
+             令牌把"我们自己启动的前端"和"任意本机进程"区分开：它只写进
+             `%AppData%\HistoryVulcan\service\endpoint.json`，随进程生存，不落设置、不可配置、不回显。
+             </summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.WebGateway.AcceptLoopAsync(System.Net.HttpListener,System.Threading.CancellationToken)">
+            <summary>
+            共用实现后顺带获得 MCP 侧原有的健壮性：单次接受失败只记警告并继续，
+            不再让一个坏连接冒泡出循环、悄悄终结整条监听。
+            </summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.WebGateway.CreateSession(System.Net.HttpListenerRequest)">
+             <summary>
+             按请求头造一个候选会话。种类恒为 <see cref="F:HistoryVulcan.Core.Clients.ClientKind.Shell"/>——这是本网关
+             唯一会接受的种类，<see cref="M:HistoryPortunus.Web.WebGateway.Authenticate(System.Net.HttpListenerRequest,HistoryVulcan.Core.Clients.ClientSession)"/> 负责核对请求头是否真的这么声明。
+            
+             4.2.0 之前这里会把不声明 Shell 的请求归成 <c>ClientKind.Web</c>，而鉴权紧接着
+             无条件拒绝它——一道从来没有人通过的门。那不是纵深防御，只是把"未实现"
+             写成了"已拒绝"的样子。种类枚举里的 Web 一并退役。
+             </summary>
+        </member>
+        <member name="M:HistoryPortunus.Web.WebGateway.Authenticate(System.Net.HttpListenerRequest,HistoryVulcan.Core.Clients.ClientSession)">
+             <summary>
+             3.13.0 起唯一的接受条件：同机回环上的前端 Shell。
+            
+             删除局域网面后这里不再有"部分授权"的中间态——要么是本机前端（read/operate/admin
+             全给），要么直接 401。<c>ClientSession.Scopes</c> 仍然填齐是因为它属于冻结的 Core
+             公开面，消费方仍可能读取；本网关只是不再产生任何低于 admin 的会话。
+            
+             三个条件缺一不可：回环、声明为 Shell、持有本次监听的 <see cref="P:HistoryPortunus.Web.WebGateway.AccessToken"/>。
+             前两条只是形状检查（任何本机进程都能伪造），真正的边界是第三条。
+             </summary>
+        </member>
+    </members>
+</doc>

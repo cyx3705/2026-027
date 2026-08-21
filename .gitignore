@@ -1,0 +1,47 @@
+# HistoryJanus baseline begin
+*.bak
+*.buildwithskipanalyzers
+*.cache
+*.dwl
+*.dwl2
+*.elk
+*.eod
+*.eox
+*.flk
+*.idb
+*.ilk
+*.lck
+*.log
+*.lref
+*.obj
+*.pdb
+*.slk
+*.suo
+*.tlog
+*.tmp
+*.up2date
+*.user
+*.vsidx
+*.xlk
+# HistoryJanus baseline end
+
+# IDE state
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# .NET build and test outputs
+**/bin/
+**/obj/
+TestResults/
+
+# Local package and deployment scratch
+*.tmp
+*.log
+z-Package-AppShell/staging/
+# z-Publish contains the generated root candidate and flat release history.
+
+# 本机覆盖点：AI 工作树里指回来源仓的宿主快照，不入库
+Directory.Build.user.props

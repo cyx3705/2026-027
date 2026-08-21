@@ -1,0 +1,11 @@
+root = true
+
+[*.cs]
+# Correctness and security gates. TreatWarningsAsErrors in Directory.Build.props makes these build blockers.
+# CA2000 remains an audit probe because public ownership-transfer APIs (for example ServiceHost.Run)
+# produce false positives that cannot be expressed to the .NET 8 analyzer without local suppression.
+dotnet_diagnostic.CA2012.severity = warning
+dotnet_diagnostic.CA2016.severity = warning
+dotnet_diagnostic.CA2208.severity = warning
+dotnet_diagnostic.CA5351.severity = warning
+dotnet_diagnostic.CA5394.severity = warning

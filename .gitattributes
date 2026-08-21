@@ -1,0 +1,271 @@
+# Fallback default. Must stay ABOVE the baseline block: gitattributes takes the
+# LAST matching rule, so a trailing `* text=auto` would override every `-text`
+# declared for binary types below.
+* text=auto
+
+# HistoryJanus baseline begin
+*.1 filter=lfs diff=lfs merge=lfs -text
+*.48719 text eol=lf
+*.7z filter=lfs diff=lfs merge=lfs -text
+*.@msg filter=lfs diff=lfs merge=lfs -text
+*.a filter=lfs diff=lfs merge=lfs -text
+*.a51 text eol=lf
+*.administrator text eol=lf
+*.ap15 text eol=lf
+*.asm filter=lfs diff=lfs merge=lfs -text
+*.asmdef text eol=lf
+*.asset text eol=lf
+*.autosave filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text
+*.baml filter=lfs diff=lfs merge=lfs -text
+*.bin filter=lfs diff=lfs merge=lfs -text
+*.bip filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.bmp filter=lfs diff=lfs merge=lfs -text
+*.bomdoc text eol=lf
+*.c text eol=lf
+*.caj filter=lfs diff=lfs merge=lfs -text
+*.cat filter=lfs diff=lfs merge=lfs -text
+*.cfg filter=lfs diff=lfs merge=lfs -text
+*.cfs filter=lfs diff=lfs merge=lfs -text
+*.ckt text eol=lf
+*.cmd text eol=lf
+*.cnk filter=lfs diff=lfs merge=lfs -text
+*.config text eol=lf
+*.cpp text eol=lf
+*.cs text eol=lf
+*.csproj text eol=lf
+*.csv text eol=lf
+*.dat filter=lfs diff=lfs merge=lfs -text
+*.db filter=lfs diff=lfs merge=lfs -text
+*.db-shm filter=lfs diff=lfs merge=lfs -text
+*.db-wal filter=lfs diff=lfs merge=lfs -text
+*.del filter=lfs diff=lfs merge=lfs -text
+*.dft filter=lfs diff=lfs merge=lfs -text
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.doc filter=lfs diff=lfs merge=lfs -text
+*.docm filter=lfs diff=lfs merge=lfs -text
+*.docx filter=lfs diff=lfs merge=lfs -text
+*.dti text eol=lf
+*.dwg filter=lfs diff=lfs merge=lfs -text
+*.dwlt text eol=lf
+*.dxf text eol=lf
+*.dylib filter=lfs diff=lfs merge=lfs -text
+*.editorconfig text eol=lf
+*.err text eol=lf
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.fdt filter=lfs diff=lfs merge=lfs -text
+*.fdx filter=lfs diff=lfs merge=lfs -text
+*.fig filter=lfs diff=lfs merge=lfs -text
+*.filters text eol=lf
+*.flv filter=lfs diff=lfs merge=lfs -text
+*.fnm text eol=lf
+*.frq text eol=lf
+*.gen filter=lfs diff=lfs merge=lfs -text
+*.guid text eol=lf
+*.gx3 filter=lfs diff=lfs merge=lfs -text
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.h text eol=lf
+*.hex filter=lfs diff=lfs merge=lfs -text
+*.htm text eol=lf
+*.html text eol=lf
+*.http text eol=lf
+*.ico filter=lfs diff=lfs merge=lfs -text
+*.id filter=lfs diff=lfs merge=lfs -text
+*.idx filter=lfs diff=lfs merge=lfs -text
+*.iex text eol=lf
+*.igs filter=lfs diff=lfs merge=lfs -text
+*.index filter=lfs diff=lfs merge=lfs -text
+*.inf text eol=lf
+*.ini text eol=lf
+*.ino text eol=lf
+*.inp0 text eol=lf
+*.inpx text eol=lf
+*.intlib filter=lfs diff=lfs merge=lfs -text
+*.ipch filter=lfs diff=lfs merge=lfs -text
+*.jar filter=lfs diff=lfs merge=lfs -text
+*.jfif filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.JPG filter=lfs diff=lfs merge=lfs -text
+*.js text eol=lf
+*.json text eol=lf
+*.jt filter=lfs diff=lfs merge=lfs -text
+*.ksp filter=lfs diff=lfs merge=lfs -text
+*.lastbuildstate text eol=lf
+*.layx text eol=lf
+*.lib filter=lfs diff=lfs merge=lfs -text
+*.libpkg text eol=lf
+*.lnk filter=lfs diff=lfs merge=lfs -text
+*.lnp text eol=lf
+*.lst text eol=lf
+*.m text eol=lf
+*.m51 text eol=lf
+*.manifest text eol=lf
+*.mcam filter=lfs diff=lfs merge=lfs -text
+*.mcam-control filter=lfs diff=lfs merge=lfs -text
+*.mcam-gmd filter=lfs diff=lfs merge=lfs -text
+*.mcam-lmd filter=lfs diff=lfs merge=lfs -text
+*.mcam-mmd filter=lfs diff=lfs merge=lfs -text
+*.mcam-rmd filter=lfs diff=lfs merge=lfs -text
+*.mcam-wmd filter=lfs diff=lfs merge=lfs -text
+*.md text eol=lf
+*.mdl text eol=lf
+*.meta text eol=lf
+*.mkv filter=lfs diff=lfs merge=lfs -text
+*.mltbx filter=lfs diff=lfs merge=lfs -text
+*.mod text eol=lf
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.nc text eol=lf
+*.nfproj text eol=lf
+*.nupkg filter=lfs diff=lfs merge=lfs -text
+*.original filter=lfs diff=lfs merge=lfs -text
+*.p7s filter=lfs diff=lfs merge=lfs -text
+*.par filter=lfs diff=lfs merge=lfs -text
+*.pcbdoc filter=lfs diff=lfs merge=lfs -text
+*.pcblib filter=lfs diff=lfs merge=lfs -text
+*.pdbx text eol=lf
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.pe filter=lfs diff=lfs merge=lfs -text
+*.pl filter=lfs diff=lfs merge=lfs -text
+*.plf filter=lfs diff=lfs merge=lfs -text
+*.plg text eol=lf
+*.pma15_0 filter=lfs diff=lfs merge=lfs -text
+*.png filter=lfs diff=lfs merge=lfs -text
+*.pptx filter=lfs diff=lfs merge=lfs -text
+*.prefab text eol=lf
+*.pri filter=lfs diff=lfs merge=lfs -text
+*.projitems text eol=lf
+*.props text eol=lf
+*.prp filter=lfs diff=lfs merge=lfs -text
+*.prproj filter=lfs diff=lfs merge=lfs -text
+*.prt filter=lfs diff=lfs merge=lfs -text
+*.prtpl filter=lfs diff=lfs merge=lfs -text
+*.prx filter=lfs diff=lfs merge=lfs -text
+*.ps1 text eol=lf
+*.psb filter=lfs diff=lfs merge=lfs -text
+*.psm filter=lfs diff=lfs merge=lfs -text
+*.pst text eol=lf
+*.pubxml text eol=lf
+*.pwx filter=lfs diff=lfs merge=lfs -text
+*.py text eol=lf
+*.pyc filter=lfs diff=lfs merge=lfs -text
+*.pyproj text eol=lf
+*.qml text eol=lf
+*.r2021a filter=lfs diff=lfs merge=lfs -text
+*.razor text eol=lf
+*.rdf filter=lfs diff=lfs merge=lfs -text
+*.recipe text eol=lf
+*.resources filter=lfs diff=lfs merge=lfs -text
+*.resx text eol=lf
+*.rld filter=lfs diff=lfs merge=lfs -text
+*.rlf text eol=lf
+*.rsf text eol=lf
+*.rslib filter=lfs diff=lfs merge=lfs -text
+*.rsproj text eol=lf
+*.rsstnx text eol=lf
+*.rsuser text eol=lf
+*.rul text eol=lf
+*.schdoc filter=lfs diff=lfs merge=lfs -text
+*.schlib filter=lfs diff=lfs merge=lfs -text
+*.scr text eol=lf
+*.set text eol=lf
+*.settings text eol=lf
+*.sev text eol=lf
+*.shproj text eol=lf
+*.sldasm filter=lfs diff=lfs merge=lfs -text
+*.slddrw filter=lfs diff=lfs merge=lfs -text
+*.sldprt filter=lfs diff=lfs merge=lfs -text
+*.sln text eol=lf
+*.slx filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.srt filter=lfs diff=lfs merge=lfs -text
+*.step filter=lfs diff=lfs merge=lfs -text
+*.stp text eol=lf
+*.sys filter=lfs diff=lfs merge=lfs -text
+*.targets text eol=lf
+*.tii filter=lfs diff=lfs merge=lfs -text
+*.tis filter=lfs diff=lfs merge=lfs -text
+*.tooldb filter=lfs diff=lfs merge=lfs -text
+*.tvd filter=lfs diff=lfs merge=lfs -text
+*.tvf filter=lfs diff=lfs merge=lfs -text
+*.tvx filter=lfs diff=lfs merge=lfs -text
+*.txt text eol=lf
+*.unity text eol=lf
+*.uvopt text eol=lf
+*.uvproj text eol=lf
+*.v2 filter=lfs diff=lfs merge=lfs -text
+*.vb text eol=lf
+*.vbproj text eol=lf
+*.vcxproj text eol=lf
+*.vxd filter=lfs diff=lfs merge=lfs -text
+*.wmv filter=lfs diff=lfs merge=lfs -text
+*.xaml text eol=lf
+*.xls filter=lfs diff=lfs merge=lfs -text
+*.xlsx filter=lfs diff=lfs merge=lfs -text
+*.xmind filter=lfs diff=lfs merge=lfs -text
+*.xml text eol=lf
+*.xmp text eol=lf
+*.x_t filter=lfs diff=lfs merge=lfs -text
+*.yml text eol=lf
+*.zheng text eol=lf
+*.zw1 filter=lfs diff=lfs merge=lfs -text
+*._ text eol=lf
+# HistoryJanus baseline end
+
+*.cs text eol=lf
+*.xaml text eol=lf
+*.csproj text eol=lf
+*.sln text eol=crlf
+*.props text eol=lf
+*.targets text eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.md text eol=lf
+
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.pdf filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+*.avi filter=lfs diff=lfs merge=lfs -text
+*.mkv filter=lfs diff=lfs merge=lfs -text
+*.wmv filter=lfs diff=lfs merge=lfs -text
+*.flv filter=lfs diff=lfs merge=lfs -text
+*.stp filter=lfs diff=lfs merge=lfs -text
+*.nupkg filter=lfs diff=lfs merge=lfs -text
+*.snupkg filter=lfs diff=lfs merge=lfs -text
+
+# HistoryJanus managed begin
+*.asm filter=lfs diff=lfs merge=lfs -text
+*.cfg filter=lfs diff=lfs merge=lfs -text
+*.config text eol=lf
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.dwg filter=lfs diff=lfs merge=lfs -text
+*.exe filter=lfs diff=lfs merge=lfs -text
+*.lnk filter=lfs diff=lfs merge=lfs -text
+*.manifest text eol=lf
+*.mcam filter=lfs diff=lfs merge=lfs -text
+*.par filter=lfs diff=lfs merge=lfs -text
+*.pcbdoc filter=lfs diff=lfs merge=lfs -text
+*.pcblib filter=lfs diff=lfs merge=lfs -text
+*.pdb filter=lfs diff=lfs merge=lfs -text
+*.prjpcb text eol=lf
+*.prjpcbstructure text eol=lf
+*.prt filter=lfs diff=lfs merge=lfs -text
+*.ps1 text eol=lf
+*.schdoc filter=lfs diff=lfs merge=lfs -text
+*.schdocpreview filter=lfs diff=lfs merge=lfs -text
+*.schlib filter=lfs diff=lfs merge=lfs -text
+*.sha256 text eol=lf
+*.sldasm filter=lfs diff=lfs merge=lfs -text
+*.sldprt filter=lfs diff=lfs merge=lfs -text
+*.sln text eol=lf
+*.xlsx filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+# HistoryJanus managed end
+
+# Published package hashes cover exact bytes; Git must not normalize package content.
+z-Publish/** binary

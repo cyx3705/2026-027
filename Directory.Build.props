@@ -1,0 +1,18 @@
+﻿<Project>
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- 锁定还原：packages.lock.json 是依赖图的唯一权威投影，locked-mode 使漂移成为构建失败。 -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+
+  <!--
+    本机覆盖点。各工程按相对路径引用宿主 z 快照（假定本仓与 2026-023-HistoryVulcan 在同一库根下），
+    而 AI 工作树落在库根之外，那条相对路径必然指空。diana.worktree.create 会在新工作树里
+    生成 Directory.Build.user.props，把 HistoryVulcanPackageRoot 指回来源仓的绝对路径。
+    该文件不入库（见 .gitignore），因此工作树从诞生起就是干净的。
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)Directory.Build.user.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)Directory.Build.user.props')" />
+</Project>

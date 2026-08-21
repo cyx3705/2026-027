@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <AssemblyName>Contracts</AssemblyName>
+    <!-- 与 HistoryPortunus.csproj 的 InternalsVisibleTo 对应：网关是模块内部零件。 -->
+    <RootNamespace>HistoryPortunus.Contracts</RootNamespace>
+
+    <!--
+      与 b-Code-Portunus/PortunusVersion.props 保持同一套解析规则。
+      不直接 Import 那个 props 是因为它还携带模块版本号，测试工程没有版本可言；
+      需要的只是宿主快照的位置，而 Directory.Build.user.props 会在 AI 工作树里覆盖它。
+    -->
+    <HistoryVulcanPackageRoot Condition="'$(HistoryVulcanPackageRoot)' == ''">$(MSBuildThisFileDirectory)../../../2026-023-HistoryVulcan/z-Publish</HistoryVulcanPackageRoot>
+    <HistoryVulcanHostRoot Condition="'$(HistoryVulcanHostRoot)' == ''">$(HistoryVulcanPackageRoot)/host</HistoryVulcanHostRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../b-Code-Portunus/HistoryPortunus.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      宿主运行库在这里必须 Private=true（与模块工程相反）。
+      模块运行时由宿主提供这些程序集，测试进程里没有宿主，得自己带一份，
+      否则用例在构造 CommandBus 时就抛 FileNotFoundException。
+    -->
+    <Reference Include="HistoryVulcan.Core">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="HistoryVulcan.Extensibility">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+    <Reference Include="HistoryVulcan.Services">
+      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
