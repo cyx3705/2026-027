@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <HistoryPortunusVersion>0.2.0</HistoryPortunusVersion>
+    <HistoryPortunusVersion>0.2.1</HistoryPortunusVersion>
     <!-- Portunus 消费的 HistoryVulcan 正式宿主版本，是宿主契约的唯一真源：
          发布脚本与质量门禁都从此读取，不再各自硬编码字面量。
          4.3.0 起宿主在热重载的拆除阶段 Dispose 模块实例。本模块持有一个 HttpListener，

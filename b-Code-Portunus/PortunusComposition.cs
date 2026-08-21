@@ -44,7 +44,14 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
         lock (_gate)
         {
             _context = context;
-            _endpointFile = Path.Combine(context.DataDirectory, EndpointDescriptor.FileName);
+            var endpointFile = Path.Combine(context.DataDirectory, EndpointDescriptor.FileName);
+
+            // 先认领本机航线，再开监听。装载本模块的进程不一定是提供服务的那个——
+            // `--export-command-manual` 为了让手册忠实反映注册表也会装载全部模块。
+            if (!HostLaneClaim.TryClaim(endpointFile, context.Log))
+                return;
+
+            _endpointFile = endpointFile;
             StartWeb(context);
         }
     }
@@ -56,6 +63,10 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     /// 所以端口先释放再重新绑定，不会退到下一个端口。
     /// 没有这一步，被遗弃的监听器会继续占着端口、继续持有活的指令总线引用——
     /// 每重载一次就多一个仍能执行任意指令的入口。
+    ///
+    /// 只删自己写下的 endpoint.json：<c>_endpointFile</c> 仅在
+    /// <see cref="HostLaneClaim.TryClaim"/> 通过后才被赋值，因此未取得航线的进程
+    /// 退出时不会碰活着的宿主留下的那一份。
     /// </summary>
     public void Dispose()
     {
