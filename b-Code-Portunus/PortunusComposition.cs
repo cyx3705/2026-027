@@ -1,7 +1,8 @@
-﻿using HistoryVulcan.Core;
+﻿using HistoryPortunus.Mcp;
+using HistoryPortunus.Web;
+using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
-using HistoryPortunus.Web;
 
 namespace HistoryPortunus;
 
@@ -34,6 +35,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     private readonly object _gate = new();
     private IModuleContext? _context;
     private WebGateway? _web;
+    private McpGateway? _mcp;
     private string? _endpointFile;
 
     /// <summary>宿主在装载时注入上下文：权威指令总线、设置、日志与数据根目录。</summary>
@@ -53,6 +55,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
 
             _endpointFile = endpointFile;
             StartWeb(context);
+            StartMcp(context);
         }
     }
 
@@ -71,16 +74,27 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     public void Dispose()
     {
         WebGateway? web;
+        McpGateway? mcp;
         string? endpointFile;
+        IModuleContext? context;
         lock (_gate)
         {
             web = _web;
+            mcp = _mcp;
             endpointFile = _endpointFile;
+            context = _context;
             _web = null;
+            _mcp = null;
             _endpointFile = null;
             _context = null;
         }
 
+        // 先摘挂钩再拆实现：宿主的目录指令可能正在读它，而它背后的治理库马上要停。
+        // 留一个指向已拆对象的非 null 引用，调用方看不出有什么不对，却读到死数据。
+        if (context != null)
+            context.Bus.McpGovernance = null;
+
+        mcp?.Dispose();
         web?.Dispose();
         if (endpointFile != null)
             EndpointDescriptor.Delete(endpointFile);
@@ -96,6 +110,12 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     internal WebGateway? Web
     {
         get { lock (_gate) { return _web; } }
+    }
+
+    /// <summary>当前 MCP 网关；未装配时为 null。</summary>
+    internal McpGateway? Mcp
+    {
+        get { lock (_gate) { return _mcp; } }
     }
 
     private void StartWeb(IModuleContext context)
@@ -123,4 +143,73 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
         EndpointDescriptor.Write(
             _endpointFile!, web.Port, web.ServerId, web.AccessToken, context.Log);
     }
+
+    /// <summary>
+    /// 装配 MCP 航线：治理库、审计、网关、管理指令，并把治理视图挂上总线。
+    /// </summary>
+    /// <remarks>
+    /// 治理与审计的落盘位置**刻意仍在应用数据根**（<c>%AppData%\HistoryVulcan</c>），
+    /// 不跟着模块走。修订与调用历史是长期资产，让它随一个可热重载的模块搬家，
+    /// 等于把「谁改过工具描述、谁调用过什么」的连续性绑在模块的生命周期上。
+    ///
+    /// 与 Web 不同，MCP **不由本方法直接开监听**：是否随宿主起听由
+    /// <c>mcp.autostart</c> 决定，沿用迁出前 <c>ServiceHost</c> 的 <c>TryAutostart</c> 语义。
+    /// </remarks>
+    private void StartMcp(IModuleContext context)
+    {
+        // 数据根：模块上下文给的是 service 子目录，而治理与审计历来落在它的父目录。
+        // 迁移不搬数据——搬了就等于把既有修订与调用历史丢在原地。
+        var applicationRoot = Directory.GetParent(context.DataDirectory)?.FullName
+                              ?? context.DataDirectory;
+
+        var prompts = new PromptGovernanceStore(applicationRoot, context.Log);
+        var audit = new McpAuditRecorder(applicationRoot, context.Log);
+
+        var gateway = new McpGateway(
+            () => context.Bus,
+            context.Settings,
+            context.Log,
+            audit,
+            prompts,
+            AppIdentity.Current,
+            RefuseRemoteConfirmation(context.Log));
+
+        _mcp = gateway;
+
+        // 宿主的 vulcan.command.list / show 经这个挂钩取治理那几列。
+        context.Bus.McpGovernance = prompts;
+
+        context.RegisterCommands(registry => McpCommands.RegisterAll(
+            registry,
+            () => context.Bus,
+            () => gateway,
+            context.Settings,
+            prompts,
+            source: "module:HistoryPortunus"));
+
+        var (started, message) = gateway.TryAutostart();
+        if (started)
+            context.Log.Info("mcp", message);
+        else
+            context.Log.Info("mcp", message);
+    }
+
+    /// <summary>
+    /// MCP 的远端确认通道：一律拒绝。
+    /// </summary>
+    /// <remarks>
+    /// **这是对迁出前行为的逐字保留，不是新决定。** 迁出前 <c>ServiceComposer</c> 把
+    /// <c>ShellRelayConfirmation.ConfirmRemote</c> 硬接给网关，那个实现同样一律拒绝。
+    ///
+    /// 因此 <c>mcp.confirm=host</c> 今天并不会真的弹框——即使 Aurora 已装载并且
+    /// 把 <c>Bus.Confirmation</c> 换成了自己的窗口确认。改成读 <c>Bus.Confirmation</c>
+    /// 会让远端危险指令**开始**能被人工放行，那是安全语义的变更，不该混在一次搬家里。
+    /// 要不要接通，单独议。
+    /// </remarks>
+    private static Func<string, string, int, bool?> RefuseRemoteConfirmation(IShellLog log)
+        => (client, prompt, _) =>
+        {
+            log.Warn("confirm", $"远端确认请求已拒绝(来源 {client}): {prompt}");
+            return false;
+        };
 }

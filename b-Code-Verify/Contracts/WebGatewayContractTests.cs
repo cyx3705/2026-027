@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
@@ -20,6 +20,7 @@ namespace HistoryPortunus.Contracts;
 /// 它测的解码半边（<c>SessionIdFromSource</c>）随进程外前端中继一起退役，
 /// 生产代码里已无调用方，只剩那条测试在维持它活着。
 /// </remarks>
+[Collection(TestCollections.Gateway)]
 public sealed class WebGatewayContractTests
 {
     /// <summary>
