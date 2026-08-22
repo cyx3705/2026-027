@@ -17,26 +17,34 @@ namespace HistoryPortunus.Contracts;
 [Collection(TestCollections.Gateway)]
 public sealed class McpSecurityTests
 {
+    /// <summary>
+    /// 危险指令只在**宿主确认中继**开着的时候可见可调，其余一律不列不调。
+    /// </summary>
+    /// <remarks>
+    /// 本测试此前叫 FrontendOptInIsEnforced…，验的是另一套闸门：描述符上的
+    /// <c>ExecutionSite=Frontend</c> 默认不给 MCP 看，除非单独开 <c>AllowMcpExecution</c>。
+    /// 界面变成宿主内模块（DEC-008）之后，全仓再没有任何一处把 ExecutionSite 设成
+    /// Frontend——那套闸门只在这个测试里被触发过，字段与闸门已一并删除。
+    ///
+    /// 留下来的是真正在生产里起作用的那条：危险与否 × 中继开关。
+    /// </remarks>
     [Fact]
-    public async Task FrontendOptInIsEnforcedByListAndCallForEveryPolicy()
+    public async Task DangerousToolsAreCallableOnlyWhileTheHostConfirmRelayIsOn()
     {
+        var executions = new List<string>();
         var registry = new CommandRegistry();
-        registry.Register(Frontend("frontend.hidden", allowMcp: false, readOnly: true));
-        registry.Register(Frontend(
-            "frontend.danger",
-            allowMcp: false,
+        registry.Register(Probe("probe.readable", executions, readOnly: true));
+        registry.Register(Probe(
+            "probe.danger",
+            executions,
             readOnly: false,
             confirmPrompt: _ => "confirm"));
-        registry.Register(Frontend("frontend.allowed", allowMcp: true, readOnly: true));
 
-        var executions = new List<string>();
+        // 内层确认通道刻意留空：GatewayAwareConfirmation 此时只认 MCP 预批准，
+        // 于是危险指令能跑起来这件事，只可能是网关那道确认放行的，不会是别的兜底。
         var bus = new CommandBus(registry, new NullLog())
         {
-            FrontendExecutor = (text, _, _) =>
-            {
-                executions.Add(CommandParser.Parse(text).Name);
-                return Task.FromResult(CommandResult.Ok("frontend-ok"));
-            },
+            Confirmation = new GatewayAwareConfirmation(null),
         };
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
@@ -49,34 +57,42 @@ public sealed class McpSecurityTests
             return true;
         }, async client =>
         {
+            // standard + host 确认 = 中继开着：危险指令此时可见可调，但必须问过人。
             using (var listed = await PostRpcAsync(client, 1, "tools/list", new { }))
             {
                 var names = listed.RootElement.GetProperty("result").GetProperty("tools")
                     .EnumerateArray()
                     .Select(tool => tool.GetProperty("name").GetString())
                     .ToList();
-                Assert.Contains("frontend_allowed", names);
-                Assert.DoesNotContain("frontend_hidden", names);
-                Assert.DoesNotContain("frontend_danger", names);
+                Assert.Contains("probe_readable", names);
+                Assert.Contains("probe_danger", names);
             }
 
-            using (var hidden = await CallToolAsync(
-                       client, 2, "frontend_hidden", new { password = "hidden-secret" }))
-                Assert.True(IsToolError(hidden));
-            using (var dangerous = await CallToolAsync(client, 3, "frontend_danger", new { }))
-                Assert.True(IsToolError(dangerous));
-            Assert.Empty(executions);
-            Assert.Equal(0, confirmations);
+            using (var dangerous = await CallToolAsync(client, 2, "probe_danger", new { }))
+                Assert.False(IsToolError(dangerous));
+            Assert.Equal(1, confirmations);
 
+            // 切到 readonly 策略，中继随之关闭：同一条指令立刻既不可见也不可调，
+            // 而且**不许再弹确认**——弹了就等于把闸门变成一道可以点掉的提示。
             settings.Set(McpSettingKeys.Policy, "readonly");
-            using (var hiddenReadonly = await CallToolAsync(
-                       client, 4, "frontend_hidden", new { password = "readonly-secret" }))
-                Assert.True(IsToolError(hiddenReadonly));
-            using (var allowed = await CallToolAsync(client, 5, "frontend_allowed", new { }))
-                Assert.False(IsToolError(allowed));
+            using (var listed = await PostRpcAsync(client, 3, "tools/list", new { }))
+            {
+                var names = listed.RootElement.GetProperty("result").GetProperty("tools")
+                    .EnumerateArray()
+                    .Select(tool => tool.GetProperty("name").GetString())
+                    .ToList();
+                Assert.Contains("probe_readable", names);
+                Assert.DoesNotContain("probe_danger", names);
+            }
 
-            Assert.Equal(["frontend.allowed"], executions);
-            Assert.Equal(0, confirmations);
+            using (var refused = await CallToolAsync(client, 4, "probe_danger", new { }))
+                Assert.True(IsToolError(refused));
+            Assert.Equal(1, confirmations);
+
+            using (var readable = await CallToolAsync(client, 5, "probe_readable", new { }))
+                Assert.False(IsToolError(readable));
+
+            Assert.Equal(["probe.danger", "probe.readable"], executions);
         });
     }
 
@@ -97,7 +113,16 @@ public sealed class McpSecurityTests
             ],
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("ok")),
         });
-        registry.Register(Frontend("audit.hidden", allowMcp: false, readOnly: true, Parameter("password")));
+        // 被拒调用同样要脱敏。用「危险且中继关着」造这个拒绝，
+        // 与 Frontend 选择性暴露无关——那套闸门已随 ExecutionSite 删除。
+        registry.Register(new CommandDescriptor
+        {
+            Name = "audit.hidden",
+            Summary = "audit",
+            ConfirmPrompt = _ => "confirm",
+            Parameters = [Parameter("password")],
+            Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("unused")),
+        });
         registry.Register(new CommandDescriptor
         {
             Name = "vulcan.app.set",
@@ -468,22 +493,23 @@ public sealed class McpSecurityTests
         }
     }
 
-    private static CommandDescriptor Frontend(
+    /// <summary>执行时把自己的名字记进 <paramref name="executions"/> 的探针指令。</summary>
+    private static CommandDescriptor Probe(
         string name,
-        bool allowMcp,
+        List<string> executions,
         bool readOnly,
-        ParameterSpec? parameter = null,
         Func<CommandContext, string?>? confirmPrompt = null)
         => new()
         {
             Name = name,
             Summary = name,
-            ExecutionSite = CommandExecutionSite.Frontend,
-            AllowMcpExecution = allowMcp,
             Readonly = readOnly,
             ConfirmPrompt = confirmPrompt,
-            Parameters = parameter == null ? [] : [parameter],
-            Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("unused")),
+            Handler = CommandDescriptor.Sync(_ =>
+            {
+                executions.Add(name);
+                return CommandResult.Ok("probe-ok");
+            }),
         };
 
     private static ParameterSpec Parameter(string name)
