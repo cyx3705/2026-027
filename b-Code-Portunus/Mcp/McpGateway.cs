@@ -159,8 +159,8 @@ public sealed partial class McpGateway : IDisposable
     {
         if (!registry.TryGet(tool.CommandName, out var descriptor))
             return false;
-        if (descriptor.IsDangerous)
-            return relayOn && McpExposurePolicy.HardExclusionReason(tool.CommandName) == null;
+        if (descriptor.Level == CommandLevel.Ask)
+            return relayOn && McpExposurePolicy.HardExclusionReason(descriptor) == null;
         return McpExposurePolicy.IsVisible(descriptor, policy);
     }
 

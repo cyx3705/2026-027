@@ -44,6 +44,7 @@ public static class McpCommands
     private static CommandDescriptor BuildStart(Func<McpGateway?> gateway) => new()
     {
         Name = "portunus.mcp.start",
+        HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
         Summary = "启动 MCP 服务(仅 127.0.0.1;策略/令牌经 vulcan.app.set mcp.policy / mcp.token 配置)",
@@ -72,6 +73,7 @@ public static class McpCommands
     private static CommandDescriptor BuildStop(Func<McpGateway?> gateway) => new()
     {
         Name = "portunus.mcp.stop",
+        HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
         Summary = "停止 MCP 服务并释放端口",
@@ -90,6 +92,7 @@ public static class McpCommands
         Func<McpGateway?> gateway, HistoryVulcan.Core.Storage.ISettingsService settings) => new()
         {
             Name = "portunus.mcp.status",
+            HiddenReason = "防止远程递归管理或关闭 MCP 服务",
             Domain = "portunus",
             CommandClass = "mcp",
             Summary = "查看 MCP 服务状态(运行/端口/策略/暴露工具数/累计调用/最近一次调用)",
@@ -120,6 +123,7 @@ public static class McpCommands
         Func<McpGateway?> gateway, HistoryVulcan.Core.Storage.ISettingsService settings) => new()
         {
             Name = "portunus.mcp.autostart",
+            HiddenReason = "防止远程递归管理或关闭 MCP 服务",
             Domain = "portunus",
             CommandClass = "mcp",
             Summary = "查看或设置 MCP 随宿主自动监听(持久;省略 enabled 只查看)",
@@ -161,6 +165,7 @@ public static class McpCommands
     private static CommandDescriptor BuildSchema(CommandSchemaExporter exporter, CommandRegistry registry) => new()
     {
         Name = "portunus.mcp.schema",
+        HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
         Summary = "查看指令的 MCP 工具形态(不带参列全部;带 name 输出单条完整 JSON Schema)",
@@ -219,6 +224,7 @@ public static class McpCommands
     private static CommandDescriptor BuildParse(Func<CommandBus?> busAccessor) => new()
     {
         Name = "portunus.mcp.parse",
+        HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
         Summary = "调试:模拟 tools/call 反向解析——JSON arguments 组装为指令文本,exec=true 随即经总线执行",

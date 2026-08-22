@@ -119,6 +119,7 @@ public sealed class McpSecurityTests
         {
             Name = "audit.hidden",
             Summary = "audit",
+            Level = CommandLevel.Ask,
             ConfirmPrompt = _ => "confirm",
             Parameters = [Parameter("password")],
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("unused")),
@@ -369,6 +370,7 @@ public sealed class McpSecurityTests
             Name = "secure.action",
             Summary = "secure",
             Parameters = [Parameter("password")],
+            Level = CommandLevel.Ask,
             ConfirmPrompt = _ => "confirm",
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("should-not-run")),
         });
@@ -410,6 +412,7 @@ public sealed class McpSecurityTests
         {
             Name = "queued.action",
             Summary = "queued",
+            Level = CommandLevel.Ask,
             ConfirmPrompt = _ => "confirm",
             Handler = CommandDescriptor.Sync(_ =>
             {
@@ -504,6 +507,7 @@ public sealed class McpSecurityTests
             Name = name,
             Summary = name,
             Readonly = readOnly,
+            Level = confirmPrompt == null ? CommandLevel.Run : CommandLevel.Ask,
             ConfirmPrompt = confirmPrompt,
             Handler = CommandDescriptor.Sync(_ =>
             {

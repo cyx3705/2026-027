@@ -223,7 +223,7 @@ internal sealed partial class WebGateway : IDisposable
                     descriptor.Example,
                     source = bus.Registry.GetSource(descriptor.Name),
                     descriptor.Readonly,
-                    dangerous = descriptor.IsDangerous,
+                    dangerous = descriptor.Level == CommandLevel.Ask,
                     // executionSite 随 ExecutionSite 字段一并去掉：它恒为 "Local"，
                     // 全仓没有任何消费方读它，序列化出去只是让接口多一个永不变化的常量。
                     mcpState = McpExposurePolicy.State(descriptor),
