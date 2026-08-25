@@ -1,13 +1,12 @@
 <Project>
   <PropertyGroup>
-    <HistoryPortunusVersion>0.3.0</HistoryPortunusVersion>
+    <HistoryPortunusVersion>1.0.0</HistoryPortunusVersion>
     <!-- Portunus 消费的 HistoryVulcan 正式宿主版本，是宿主契约的唯一真源：
          发布脚本与质量门禁都从此读取，不再各自硬编码字面量。
-         4.3.0 起宿主在热重载的拆除阶段 Dispose 模块实例。本模块持有一个 HttpListener，
-         没有那个回调它就永远不会被关闭：旧监听器继续占着端口（新实例只能退到下一个端口），
-         而且继续持有活的指令总线引用——每重载一次就多一个仍能执行任意指令的入口。
-         这不是"少个优化"，是必须的前置条件，所以低于 4.3.0 的宿主不可用。 -->
-    <MinimumHistoryVulcanVersion>4.4.0</MinimumHistoryVulcanVersion>
+         5.1.0 将模块公开面收敛为命令总线与注册器，并移除了旧 MCP/schema/client 类型。
+         Portunus 1.0 已将这些传输专用类型收回自身，同时仍依赖宿主在热重载时 Dispose
+         模块实例以释放 HttpListener。因此低于 5.1.0 的宿主不是受支持的运行基线。 -->
+    <MinimumHistoryVulcanVersion>5.1.0</MinimumHistoryVulcanVersion>
     <VersionPrefix>$(HistoryPortunusVersion)</VersionPrefix>
     <Version>$(HistoryPortunusVersion)</Version>
     <AssemblyVersion>$(HistoryPortunusVersion).0</AssemblyVersion>

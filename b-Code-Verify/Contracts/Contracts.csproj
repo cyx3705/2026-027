@@ -37,14 +37,6 @@
       <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Core.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <Reference Include="HistoryVulcan.Extensibility">
-      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Extensibility.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
-    <Reference Include="HistoryVulcan.Services">
-      <HintPath>$(HistoryVulcanHostRoot)\HistoryVulcan.Services.dll</HintPath>
-      <Private>true</Private>
-    </Reference>
   </ItemGroup>
 
 </Project>

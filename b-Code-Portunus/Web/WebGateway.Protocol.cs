@@ -2,7 +2,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using HistoryVulcan.Core.Clients;
+using HistoryPortunus.Mcp;
 
 namespace HistoryPortunus.Web;
 
@@ -53,4 +53,3 @@ internal sealed partial class WebGateway : IDisposable
     private sealed record CommandRequest(string Text);
 
 }
-

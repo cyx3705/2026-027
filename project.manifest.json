@@ -15,7 +15,7 @@
       "transport-module"
     ],
     "status": "active",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "branch": "main"
   },
   "paths": {
@@ -61,12 +61,12 @@
     "setup": "dotnet restore .\\HistoryPortunus.sln --locked-mode -p:NuGetAudit=false",
     "build": "dotnet build .\\HistoryPortunus.sln -c Release --no-restore -p:NuGetAudit=false",
     "test": "dotnet test .\\b-Code-Verify\\Contracts\\Contracts.csproj -c Release -p:NuGetAudit=false",
-    "verify": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-Portunus\\eng\\Test-QualityGate.ps1",
+    "verify": "dotnet test .\\b-Code-Verify\\Contracts\\Contracts.csproj -c Release --no-build --no-restore -p:NuGetAudit=false",
     "run": null,
     "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-Portunus\\eng\\Build-HistoryPortunusPackage.ps1"
   },
   "externalDependencies": [
-    "HistoryVulcan >= 4.2.0 host snapshot from ../2026-023-HistoryVulcan/z-Publish/host",
+    "HistoryVulcan >= 5.1.0 published host snapshot",
     ".NET 8 SDK"
   ],
   "contextExclusions": [

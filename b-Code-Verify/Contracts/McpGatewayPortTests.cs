@@ -1,6 +1,5 @@
 using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Mcp;
 using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;

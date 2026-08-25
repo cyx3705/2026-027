@@ -2,15 +2,15 @@
 
 体系的**对外传输**。把 HistoryVulcan 的指令注册表投影给进程外的消费者，自己不产生任何业务能力。
 
-Portunus 是罗马的钥匙、门户与港口之神。取这个名字是因为切法本身：**门搬走，锁留下**——
-决定「哪些指令可以被外部调用」的 `McpExposurePolicy` 留在宿主，谁也不能靠换一个模块给自己放权。
+Portunus 是罗马的钥匙、门户与港口之神。它在 1.0 中完整持有对外传输：宿主只提供权威命令总线，
+Portunus 负责将其投影为 Web 与 MCP，并在模块内以默认拒绝的策略控制外部可见性。
 
 ## 装了几条航线
 
 | 航线 | 状态 | 服务对象 |
 |---|---|---|
-| Web | 0.2.0 已迁入 | 回环 HTTP：`/api/health`、`/api/commands`、`/api/command` |
-| MCP | 尚在宿主 | agent（Claude Code / Cursor 等）按 MCP 协议调用指令 |
+| Web | 1.0 | 回环 HTTP：`/api/health`、`/api/commands`、`/api/command` |
+| MCP | 1.0 | agent（Claude Code / Cursor 等）按 MCP 协议调用指令 |
 
 两者共享回环绑定、令牌鉴权、会话身份和对总线的执行，所以合成一个模块而不是两个——
 拆开要付两份 manifest 与发布，换来的隔离却是假的：它们编译到同一份宿主快照，
@@ -43,14 +43,17 @@ Portunus 是罗马的钥匙、门户与港口之神。取这个名字是因为�
 
 ## 对宿主的硬性要求
 
-`MinimumHistoryVulcanVersion = 4.3.0`。这不是保守取值：
+`MinimumHistoryVulcanVersion = 5.1.0`。Portunus 1.0 只支持 HistoryVulcan 5.1 及以上的发布快照：
 
-本模块持有一个 `HttpListener`。宿主 4.3.0 才开始在热重载的拆除阶段 `Dispose` 模块实例；
-在那之前非界面模块没有任何拆除回调，监听器会被遗弃——旧的继续占着端口、继续持有活的
-指令总线引用，每重载一次就多一个仍能执行任意指令的入口。
+5.1 将模块公开面收敛为命令总线和命令注册器，并从宿主移除了 MCP/schema/client 的领域类型。
+Portunus 因此自行持有传输实现、MCP 投影策略与持久配置；它不再引用宿主源码工程或已删除的
+`HistoryVulcan.Extensibility.dll`。部署包仍不携带任何 `HistoryVulcan.*.dll`，运行时只使用宿主提供的
+Core 公开面。
+
+热重载仍要求宿主在拆除阶段 `Dispose` 模块实例。模块持有 `HttpListener`，必须在旧快照
+卸载前关闭监听器；否则旧监听器会继续占端口并保留权威命令总线引用。
 
 ## 迁移背景
 
-本模块的代码原先住在宿主里（`HistoryVulcan.Services/Web`，MCP 部分仍在 `.../Mcp`）。
-迁出的理由、切法、顺序与第一轮实测结果见
-`../2026-023-HistoryVulcan/b-Office/MCP与Web迁移方案.md`。
+Portunus 1.0 不再依赖历史宿主的 MCP/Extensibility 程序集。它只引用宿主的发布快照
+`HistoryVulcan.Core.dll` 与 `HistoryVulcan.Services.dll`，且这些引用在模块包中保持 `Private=false`。

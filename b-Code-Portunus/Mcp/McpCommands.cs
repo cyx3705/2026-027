@@ -1,5 +1,3 @@
-﻿using HistoryVulcan.Core.Mcp;
-using HistoryVulcan.Extensibility.Mcp;
 using System.Text;
 using System.Text.Json;
 using HistoryVulcan.Core.Commands;
@@ -36,7 +34,7 @@ public static class McpCommands
 
         // vulcan.command.list / show / domains / manual 不在这里注册：
         // 它们是宿主的指令自省面，随宿主装配，不随本模块来去。
-        // 本模块只经 CommandBus.McpGovernance 把治理那几列交给它们。
+        // 宿主 5.1 的命令目录不再接收 MCP 治理投影；本模块只登记自己的管理指令。
     }
 
     // ---------------------------------------------------------------- portunus.mcp.start / stop / status(MG-05)

@@ -1,6 +1,5 @@
 using System.Text.Json;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Mcp;
 
 namespace HistoryPortunus.Mcp;
 
@@ -92,9 +91,7 @@ public sealed class PromptGovernanceStore : IEffectivePromptDescriptionReader, I
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
     // ---------------------------------------------------------------- IMcpPromptGovernanceView
-    // 宿主的 vulcan.command.list/show 经 CommandBus.McpGovernance 消费这四格。
-    // 刻意只交出基本类型：让提案与事故的记录类型跨过模块边界，就等于把宿主重新绑回
-    // 本模块的数据模型，那正是这次迁移要解开的东西。
+    // 这些只读投影只供 Portunus 的 MCP schema 使用；5.1 宿主不再接收治理视图。
 
     IReadOnlyDictionary<string, string> IMcpPromptGovernanceView.EffectiveDescriptions()
         => AllEffectiveDescriptions();

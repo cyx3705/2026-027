@@ -2,12 +2,10 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using HistoryVulcan.Core;
-using HistoryVulcan.Core.Clients;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Mcp;
 using HistoryVulcan.Core.Storage;
-using HistoryVulcan.Extensibility.Mcp;
+using HistoryPortunus.Mcp;
 
 namespace HistoryPortunus.Web;
 

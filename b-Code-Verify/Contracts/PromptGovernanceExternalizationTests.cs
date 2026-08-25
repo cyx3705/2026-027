@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Mcp;
 using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;
@@ -151,7 +150,7 @@ public sealed class PromptGovernanceExternalizationTests
                 store,
                 "test");
 
-            var exporter = new HistoryVulcan.Extensibility.Mcp.CommandSchemaExporter(registry)
+            var exporter = new CommandSchemaExporter(registry)
             {
                 DescriptionsProvider = store.AllEffectiveDescriptions,
             };
@@ -227,7 +226,7 @@ public sealed class PromptGovernanceExternalizationTests
         CommandRegistry registry,
         IEffectivePromptDescriptionReader reader)
     {
-        var exporter = new HistoryVulcan.Extensibility.Mcp.CommandSchemaExporter(registry)
+        var exporter = new CommandSchemaExporter(registry)
         {
             DescriptionsProvider = reader.AllEffectiveDescriptions,
         };
