@@ -23,10 +23,11 @@ internal sealed partial class WebGateway : IDisposable
     /// <summary>网关线协议版本；健康检查回报，前端据此拒绝不兼容的后台。</summary>
     private const string GatewayProtocolVersion = "3.0.0";
     internal const string KeyPort = "web.port";
+    internal const string KeyAutostart = "web.autostart";
     internal const string KeyPortRetries = "web.portretries";
     private const int DefaultPortBase = 8938;
     private const int DefaultPortSpan = 200;
-    private const int DefaultPortRetries = 20;
+    private const int DefaultPortRetries = 0;
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -55,6 +56,9 @@ internal sealed partial class WebGateway : IDisposable
 
     public int Port { get; private set; }
 
+    public bool AutostartEnabled
+        => bool.TryParse(_settings.Get(KeyAutostart), out var enabled) && enabled;
+
     /// <summary>网关固定绑定的本机地址；3.13.0 起不可配置。</summary>
     public const string LoopbackAddress = "127.0.0.1";
 
@@ -69,6 +73,15 @@ internal sealed partial class WebGateway : IDisposable
     /// `%AppData%\HistoryVulcan\service\endpoint.json`，随进程生存，不落设置、不可配置、不回显。
     /// </summary>
     public string AccessToken { get; private set; } = "";
+
+    public (bool Success, string Message) TryAutostart()
+    {
+        if (!AutostartEnabled)
+            return (true, "Web 自动启动已关闭(web.autostart=false)");
+
+        var (success, message) = Start(null);
+        return (success, success ? $"自启动: {message}" : $"自启动失败: {message}");
+    }
 
     public (bool Success, string Message) Start(int? port = null)
     {

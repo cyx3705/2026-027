@@ -112,6 +112,23 @@ public sealed class WebGatewayContractTests
         Assert.NotEqual(first, gateway.AccessToken);
     }
 
+    [Fact]
+    public void WebAutostartRequiresExplicitSetting()
+    {
+        var settings = new MemorySettings();
+        using var gateway = new WebGateway(
+            () => new CommandBus(new CommandRegistry(), new MemoryLog()), settings, new MemoryLog());
+
+        Assert.False(gateway.AutostartEnabled);
+        Assert.True(gateway.TryAutostart().Success);
+        Assert.False(gateway.IsRunning);
+
+        settings.Set("web.autostart", "true");
+        settings.Set("web.portretries", "0");
+        Assert.True(gateway.TryAutostart().Success);
+        Assert.True(gateway.IsRunning);
+    }
+
     /// <summary>超限请求体必须在反序列化之前就被拒绝，而不是先读进内存再判断。</summary>
     [Fact]
     public async Task RejectsRequestBodiesOverOneMiBBeforeDeserialization()

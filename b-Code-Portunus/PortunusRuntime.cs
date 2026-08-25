@@ -50,12 +50,26 @@ internal static class PortunusRuntime
 
         private static Dictionary<string, string> Load(string path)
         {
+            var defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["mcp.autostart"] = "true",
+                ["mcp.port"] = "8777",
+                ["mcp.portretries"] = "0",
+                ["web.autostart"] = "true",
+                ["web.port"] = "8938",
+                ["web.portretries"] = "0",
+            };
             try
             {
-                return File.Exists(path)
-                    ? JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path))
-                      ?? new(StringComparer.OrdinalIgnoreCase)
-                    : new(StringComparer.OrdinalIgnoreCase);
+                if (!File.Exists(path))
+                    return defaults;
+
+                var loaded = JsonSerializer.Deserialize<Dictionary<string, string>>(File.ReadAllText(path));
+                if (loaded == null)
+                    return defaults;
+                foreach (var pair in defaults)
+                    loaded.TryAdd(pair.Key, pair.Value);
+                return new Dictionary<string, string>(loaded, StringComparer.OrdinalIgnoreCase);
             }
             catch (JsonException)
             {

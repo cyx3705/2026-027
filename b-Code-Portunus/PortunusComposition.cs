@@ -121,7 +121,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
             ServerId = ServiceId,
         };
 
-        var (started, message) = web.Start();
+        var (started, message) = web.TryAutostart();
         if (!started)
         {
             // 不抛：一条航线起不来不该连累模块装载，否则连日志都读不到就整个消失了。

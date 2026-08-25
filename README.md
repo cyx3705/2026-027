@@ -18,6 +18,11 @@ Portunus 负责将其投影为 Web 与 MCP，并在模块内以默认拒绝的�
 
 ## 客户端契约
 
+### 1.0.4 默认启动与端口
+
+Portunus 1.0.4 随宿主启动自动开启 MCP 与回环 Web。默认固定端口为 MCP `8777`、Web `8938`，两者只绑定 `127.0.0.1`，端口被占用时不会自动换端口。
+配置保存在 `%APPDATA%\\HistoryVulcan\\state\\portunus-settings.json`：`mcp.autostart` / `web.autostart` 控制自启动，`mcp.port` / `web.port` 固定端口；将任一自启动键设为 `false` 可关闭对应监听。
+
 **每次调用前重读 `%APPDATA%\HistoryVulcan\service\endpoint.json`。**
 
 它由本模块独占：启动成功后写入，`Dispose` 时删除。里面的 `accessToken` 是**本次监听**的
