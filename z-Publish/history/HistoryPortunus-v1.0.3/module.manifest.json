@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "type": "HistoryVulcan.Module",
+  "name": "HistoryPortunus",
+  "version": "1.0.3",
+  "description": "对外传输：MCP 与回环 Web 网关",
+  "artifact": "HistoryPortunus.dll",
+  "docs": "HistoryPortunus.xml",
+  "mcpExposure": "standard",
+  "ui": false,
+  "pinned": false
+}
