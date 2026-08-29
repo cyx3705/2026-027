@@ -1,7 +1,6 @@
 ﻿using System.IO;
 using System.Net;
 using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -42,6 +41,9 @@ public sealed partial class McpGateway : IDisposable
     /// <summary>宿主确认中继对话框(client, 完整提示, 超时秒) → true/false/null;host 档需要。</summary>
     private readonly Func<string, string, int, bool?>? _remoteConfirm;
 
+    /// <summary>监听成功后把 Cursor 用户级 mcp.json 对齐到本端口；测试不传入。</summary>
+    private readonly Action<int, IShellLog>? _announceCursor;
+
     /// <summary>CX-02 §9-4:同一时刻只弹一个中继确认框,多个远程请求按序处理。</summary>
     private readonly SemaphoreSlim _confirmGate = new(1, 1);
 
@@ -66,7 +68,8 @@ public sealed partial class McpGateway : IDisposable
     public McpGateway(
         Func<CommandBus?> busAccessor, ISettingsService settings, IShellLog log, IMcpAuditLog history,
         PromptGovernanceStore prompts, ApplicationIdentity identity,
-        Func<string, string, int, bool?>? remoteConfirm = null)
+        Func<string, string, int, bool?>? remoteConfirm = null,
+        Action<int, IShellLog>? announceCursor = null)
     {
         _busAccessor = busAccessor;
         _settings = settings;
@@ -75,6 +78,7 @@ public sealed partial class McpGateway : IDisposable
         _prompts = prompts;
         _identity = identity;
         _remoteConfirm = remoteConfirm;
+        _announceCursor = announceCursor;
     }
 
     /// <summary>确认中继模式(CX-02):deny=危险指令一律拒绝(默认);host=宿主弹框人工裁决。</summary>
@@ -225,6 +229,7 @@ public sealed partial class McpGateway : IDisposable
 
             _cts = new CancellationTokenSource();
             _ = AcceptLoopAsync(_listener, _cts.Token);
+            _announceCursor?.Invoke(Port, _log);
             _log.Info("mcp", $"MCP 服务已启动: http://127.0.0.1:{Port}/mcp(策略 {Policy})");
             return (true, $"MCP 服务已启动: http://127.0.0.1:{Port}/mcp\n策略 {Policy},当前暴露 {VisibleTools().Count} 个工具");
         }
@@ -292,20 +297,6 @@ public sealed partial class McpGateway : IDisposable
         {
             TryClose(context, 405);
             return;
-        }
-
-        // MS-02:可选共享密钥
-        var token = _settings.Get(McpSettingKeys.Token);
-        if (!string.IsNullOrEmpty(token))
-        {
-            var suppliedToken = ReadBearer(request);
-            if (suppliedToken == null || !FixedEquals(suppliedToken, token))
-            {
-                RecordMcpSafely(session, "(auth)", "", "拒绝", 0);
-                _log.Warn("mcp", "拒绝一次请求: Authorization 缺失或 token 不匹配(MS-02)");
-                TryClose(context, 401);
-                return;
-            }
         }
 
         string body;

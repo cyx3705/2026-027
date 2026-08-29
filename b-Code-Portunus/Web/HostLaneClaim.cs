@@ -31,6 +31,13 @@ internal static class HostLaneClaim
     /// <returns>true 表示可以开监听；false 表示已有活着的宿主占用，本进程应保持静默。</returns>
     internal static bool TryClaim(string endpointFile, IShellLog log)
     {
+        using var self = Process.GetCurrentProcess();
+        if (!ShouldOpenListeners(self.ProcessName, Environment.GetCommandLineArgs()))
+        {
+            log.Info("web", "离线 CLI / 手册导出不开对外航线，也不改 endpoint.json");
+            return false;
+        }
+
         var holder = ReadLiveHolder(endpointFile);
         if (holder == null)
             return true;
@@ -94,5 +101,31 @@ internal static class HostLaneClaim
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// 只有真正的服务宿主才开端口。<c>HistoryVulcan.Cli</c> 和带 <c>--cli</c> 的离线组合
+    /// 也会装载本模块（为了手册和门禁），但它们不是航线持有者：一旦误判成功，
+    /// <see cref="PortunusComposition.Dispose"/> 会把活宿主的 <c>endpoint.json</c> 删掉。
+    /// </summary>
+    internal static bool ShouldOpenListeners(string processName, IReadOnlyList<string> arguments)
+    {
+        if (processName.EndsWith(".Cli", StringComparison.OrdinalIgnoreCase)
+            || processName.Contains("Cli", StringComparison.OrdinalIgnoreCase)
+                && processName.Contains("HistoryVulcan", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        foreach (var argument in arguments)
+        {
+            if (argument.Equals("--cli", StringComparison.OrdinalIgnoreCase)
+                || argument.Equals("--export-command-manual", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

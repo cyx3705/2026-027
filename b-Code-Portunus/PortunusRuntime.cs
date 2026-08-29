@@ -55,6 +55,7 @@ internal static class PortunusRuntime
                 ["mcp.autostart"] = "true",
                 ["mcp.port"] = "8777",
                 ["mcp.portretries"] = "0",
+                ["mcp.policy"] = "standard",
                 ["web.autostart"] = "true",
                 ["web.port"] = "8938",
                 ["web.portretries"] = "0",
@@ -90,7 +91,28 @@ internal static class PortunusRuntime
             lock (_entries)
                 _entries.Add(entry);
             Trace.WriteLine($"[HistoryPortunus:{category}] {message}");
+            TryAppendFile(entry);
             EntryAdded?.Invoke(this, entry);
+        }
+
+        private static void TryAppendFile(ShellLogEntry entry)
+        {
+            try
+            {
+                var directory = Path.Combine(Root, "service", "logs");
+                Directory.CreateDirectory(directory);
+                var line =
+                    $"{DateTime.Now:HH:mm:ss.fff} [{entry.Level}] [{entry.Category}] {entry.Message}{Environment.NewLine}";
+                File.AppendAllText(
+                    Path.Combine(directory, $"portunus-{DateTime.Now:yyyyMMdd}.log"),
+                    line);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
+            }
         }
 
         public IReadOnlyList<ShellLogEntry> Snapshot()

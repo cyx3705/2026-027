@@ -83,9 +83,14 @@ public static class McpSettingKeys
     public const string SessionLimit = "mcp.sessionlimit";
 
     public static string ResolvePolicy(ISettingsService settings)
-        => settings.Get(Policy)?.Equals("standard", StringComparison.OrdinalIgnoreCase) == true
-            ? "standard"
-            : "readonly";
+    {
+        var configured = settings.Get(Policy);
+        if (string.IsNullOrWhiteSpace(configured))
+            return "standard";
+        return configured.Equals("readonly", StringComparison.OrdinalIgnoreCase)
+            ? "readonly"
+            : "standard";
+    }
 }
 
 /// <summary>Centralized, fail-closed visibility policy for the Portunus MCP projection.</summary>

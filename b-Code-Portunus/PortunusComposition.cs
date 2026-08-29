@@ -49,13 +49,15 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
             var endpointFile = Path.Combine(PortunusRuntime.ApplicationRoot, "service", EndpointDescriptor.FileName);
 
             // 先认领本机航线，再开监听。装载本模块的进程不一定是提供服务的那个——
-            // `--export-command-manual` 为了让手册忠实反映注册表也会装载全部模块。
-            if (!HostLaneClaim.TryClaim(endpointFile, PortunusRuntime.Log))
-                return;
+            // `--cli` / `--export-command-manual` 为了让手册忠实反映注册表也会装载全部模块。
+            var claimed = HostLaneClaim.TryClaim(endpointFile, PortunusRuntime.Log);
+            if (claimed)
+            {
+                _endpointFile = endpointFile;
+                StartWeb(context, PortunusRuntime.Settings, PortunusRuntime.Log);
+            }
 
-            _endpointFile = endpointFile;
-            StartWeb(context, PortunusRuntime.Settings, PortunusRuntime.Log);
-            StartMcp(context, PortunusRuntime.Settings, PortunusRuntime.Log);
+            StartMcp(context, PortunusRuntime.Settings, PortunusRuntime.Log, listen: claimed);
         }
     }
 
@@ -127,6 +129,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
             // 不抛：一条航线起不来不该连累模块装载，否则连日志都读不到就整个消失了。
             log.Error("web", message);
             web.Dispose();
+            _endpointFile = null;
             return;
         }
 
@@ -150,11 +153,13 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     ///
     /// 与 Web 不同，MCP **不由本方法直接开监听**：是否随宿主起听由
     /// <c>mcp.autostart</c> 决定，沿用迁出前 <c>ServiceHost</c> 的 <c>TryAutostart</c> 语义。
+    /// 未取得航线的进程（离线 CLI）仍登记管理指令，但不绑定端口、不改 mcp.json。
     /// </remarks>
     private void StartMcp(
         IModuleContext context,
         HistoryVulcan.Core.Storage.ISettingsService settings,
-        IShellLog log)
+        IShellLog log,
+        bool listen)
     {
         var applicationRoot = PortunusRuntime.ApplicationRoot;
 
@@ -168,7 +173,8 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
             audit,
             prompts,
             AppIdentity.Current,
-            RefuseRemoteConfirmation(log));
+            RefuseRemoteConfirmation(log),
+            (port, mcpLog) => CursorMcpConfig.Sync(port, mcpLog));
 
         _mcp = gateway;
 
@@ -180,11 +186,17 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
             prompts,
             source: "module:HistoryPortunus"));
 
+        if (!listen)
+        {
+            log.Info("mcp", "本进程不开 MCP 监听");
+            return;
+        }
+
         var (started, message) = gateway.TryAutostart();
         if (started)
             log.Info("mcp", message);
         else
-            log.Info("mcp", message);
+            log.Error("mcp", message);
     }
 
     /// <summary>

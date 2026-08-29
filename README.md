@@ -12,16 +12,18 @@ Portunus 负责将其投影为 Web 与 MCP，并在模块内以默认拒绝的�
 | Web | 1.0 | 回环 HTTP：`/api/health`、`/api/commands`、`/api/command` |
 | MCP | 1.0 | agent（Claude Code / Cursor 等）按 MCP 协议调用指令 |
 
-两者共享回环绑定、令牌鉴权、会话身份和对总线的执行，所以合成一个模块而不是两个——
+两者共享回环绑定、会话身份和对总线的执行，所以合成一个模块而不是两个——
 拆开要付两份 manifest 与发布，换来的隔离却是假的：它们编译到同一份宿主快照，
-宿主 API 一动一起坏。
+宿主 API 一动一起坏。Web 仍对前端持券；MCP 对本机 agent 不持券。
 
 ## 客户端契约
 
-### 1.0.4 默认启动与端口
+### 1.0.5 本机 MCP 不持券
 
-Portunus 1.0.4 随宿主启动自动开启 MCP 与回环 Web。默认固定端口为 MCP `8777`、Web `8938`，两者只绑定 `127.0.0.1`，端口被占用时不会自动换端口。
-配置保存在 `%APPDATA%\\HistoryVulcan\\state\\portunus-settings.json`：`mcp.autostart` / `web.autostart` 控制自启动，`mcp.port` / `web.port` 固定端口；将任一自启动键设为 `false` 可关闭对应监听。
+Portunus 1.0.5 随宿主启动自动开启 MCP 与回环 Web。默认固定端口为 MCP `8777`、Web `8938`，两者只绑定 `127.0.0.1`，端口被占用时不会自动换端口。
+MCP 不校验 Bearer。监听成功后把 `%USERPROFILE%\\.cursor\\mcp.json` 的 `history-vulcan` 写成当前 url，并去掉鉴权头——带 `Authorization` 时 Cursor 会走 `mcp_auth`，工具发现失败。
+配置保存在 `%APPDATA%\\HistoryVulcan\\state\\portunus-settings.json`：`mcp.autostart` / `web.autostart` 控制自启动，`mcp.port` / `web.port` 固定端口；将任一自启动键设为 `false` 可关闭对应监听。默认 `mcp.policy=standard`。
+
 
 **每次调用前重读 `%APPDATA%\HistoryVulcan\service\endpoint.json`。**
 

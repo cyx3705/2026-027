@@ -249,7 +249,7 @@ public sealed class McpSecurityTests
     }
 
     [Fact]
-    public async Task BearerAndProtocolRejectionsAreFailClosedAndAudited()
+    public async Task LoopbackDoesNotDemandBearerAndStillRejectsOversizedProtocol()
     {
         var registry = new CommandRegistry();
         registry.Register(new CommandDescriptor
@@ -262,7 +262,7 @@ public sealed class McpSecurityTests
         });
         var bus = new CommandBus(registry, new NullLog());
         var settings = new MemorySettings();
-        settings.Set(McpSettingKeys.Token, "correct-token");
+        settings.Set(McpSettingKeys.Token, "stale-token-must-be-ignored");
         var audit = new CaptureAudit();
 
         await WithGatewayAsync(bus, settings, audit, null, async client =>
@@ -272,19 +272,18 @@ public sealed class McpSecurityTests
                 "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{" +
                 "\"name\":\"auth_ready\",\"arguments\":{\"password\":\"protocol-secret\"}}}";
 
-            using (var wrongRequest = new HttpRequestMessage(HttpMethod.Post, "mcp"))
+            using (var ignoredToken = new HttpRequestMessage(HttpMethod.Post, "mcp"))
             {
-                wrongRequest.Headers.TryAddWithoutValidation("Authorization", "Bearer wrong-token");
-                wrongRequest.Headers.TryAddWithoutValidation(
+                ignoredToken.Headers.TryAddWithoutValidation("Authorization", "Bearer wrong-token");
+                ignoredToken.Headers.TryAddWithoutValidation(
                     "MCP-Protocol-Version", McpGateway.SupportedProtocols[0]);
-                wrongRequest.Content = new StringContent(body, Encoding.UTF8, "application/json");
-                using var response = await client.SendAsync(wrongRequest);
-                Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+                ignoredToken.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                using var response = await client.SendAsync(ignoredToken);
+                Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             }
 
             using (var invalidProtocol = new HttpRequestMessage(HttpMethod.Post, "mcp"))
             {
-                invalidProtocol.Headers.TryAddWithoutValidation("Authorization", "bEaReR correct-token");
                 invalidProtocol.Headers.TryAddWithoutValidation(
                     "MCP-Protocol-Version", new string('v', 100));
                 invalidProtocol.Content = new StringContent(body, Encoding.UTF8, "application/json");
@@ -296,7 +295,6 @@ public sealed class McpSecurityTests
 
             using (var accepted = new HttpRequestMessage(HttpMethod.Post, "mcp"))
             {
-                accepted.Headers.TryAddWithoutValidation("Authorization", "Bearer correct-token");
                 accepted.Headers.TryAddWithoutValidation(
                     "MCP-Protocol-Version", McpGateway.SupportedProtocols[0]);
                 accepted.Content = new StringContent(body, Encoding.UTF8, "application/json");
@@ -305,7 +303,7 @@ public sealed class McpSecurityTests
             }
         });
 
-        Assert.Contains(audit.Entries, entry => entry.Tool == "(auth)" && entry.Result == "拒绝");
+        Assert.DoesNotContain(audit.Entries, entry => entry.Tool == "(auth)");
         Assert.Contains(audit.Entries, entry => entry.Tool == "<invalid>"
                                                 && entry.Result == "拒绝·协议版本");
         Assert.Contains(audit.Entries, entry => entry.Tool == "auth_ready" && entry.Result == "成功");

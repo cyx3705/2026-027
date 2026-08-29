@@ -1,7 +1,5 @@
 ﻿using System.IO;
 using System.Net;
-using System.Collections.Concurrent;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -16,12 +14,6 @@ namespace HistoryPortunus.Mcp;
 
 public sealed partial class McpGateway : IDisposable
 {
-    private static string? ReadBearer(HttpListenerRequest request)
-        => LoopbackHttpTransport.ReadBearer(request);
-
-    private static bool FixedEquals(string left, string right)
-        => LoopbackHttpTransport.FixedEquals(left, right);
-
     private static string NormalizeClientName(string? value, string fallback)
     {
         var normalized = NormalizeBoundedText(value, MaxClientNameLength);

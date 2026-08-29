@@ -29,7 +29,7 @@ public static class McpCommands
         registry.Register(BuildParse(busAccessor), source);
         registry.Register(BuildStart(gateway), source);
         registry.Register(BuildStop(gateway), source);
-        registry.Register(BuildStatus(gateway, settings), source);
+        registry.Register(BuildStatus(gateway), source);
         registry.Register(BuildAutostart(gateway, settings), source);
 
         // vulcan.command.list / show / domains / manual 不在这里注册：
@@ -45,7 +45,7 @@ public static class McpCommands
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
-        Summary = "启动 MCP 服务(仅 127.0.0.1;策略/令牌经 vulcan.app.set mcp.policy / mcp.token 配置)",
+        Summary = "启动 MCP 服务(仅 127.0.0.1;本机回环不持券,并自动对齐 Cursor mcp.json)",
         Example = "portunus.mcp.start port=8737",
         Parameters =
         [
@@ -86,8 +86,7 @@ public static class McpCommands
         }),
     };
 
-    private static CommandDescriptor BuildStatus(
-        Func<McpGateway?> gateway, HistoryVulcan.Core.Storage.ISettingsService settings) => new()
+    private static CommandDescriptor BuildStatus(Func<McpGateway?> gateway) => new()
         {
             Name = "portunus.mcp.status",
             HiddenReason = "防止远程递归管理或关闭 MCP 服务",
@@ -103,9 +102,9 @@ public static class McpCommands
 
                 var sb = new StringBuilder();
                 sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
-                sb.Append($"\n  策略   : {g.Policy}(vulcan.app.set key=mcp.policy value=readonly|standard)");
+                sb.Append($"\n  策略   : {g.Policy}(缺省 standard;vulcan.app.set key=mcp.policy value=readonly 可收窄)");
                 sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
-                sb.Append($"\n  令牌   : {(string.IsNullOrEmpty(settings.Get(McpSettingKeys.Token)) ? "未设置(本机回环可信)" : "已设置(Bearer 必需)")}");
+                sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
                 sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
                 sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
                           $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;host 档开启中继确认)")}");
