@@ -27,6 +27,10 @@ MCP 不校验 Bearer。监听成功后把 `%USERPROFILE%\\.cursor\\mcp.json` 的
 
 **每次调用前重读 `%APPDATA%\HistoryVulcan\service\endpoint.json`。**
 
+Web 请求同时需要 `Authorization: Bearer <accessToken>` 与 `X-HistoryVulcan-Client: Shell`。
+只发送 Bearer 仍会返回 401。健康检查使用 `GET /api/health`，命令目录使用
+`GET /api/commands`，执行命令使用 `POST /api/command`，JSON 为 `{"text":"vulcan.module.list"}`。
+
 它由本模块独占：启动成功后写入，`Dispose` 时删除。里面的 `accessToken` 是**本次监听**的
 一次性凭据，而本模块随宿主的每一轮模块热重载重启，所以令牌的换发频率是「每次重载」，
 不是「每次宿主启动」。把令牌缓存在客户端进程里，下一次重载就会拿到 401。
