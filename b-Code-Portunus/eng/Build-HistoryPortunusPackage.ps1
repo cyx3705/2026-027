@@ -3,12 +3,8 @@
 <#
     构建 HistoryPortunus 发布候选。
 
-    参数面从第一天就对齐 Diana 发布器的调用契约
-    （`Publish-OneHistoryModule.ps1` 按 -Configuration / -OutputRoot / -HistoryVulcanPackageRoot 调用）。
-    HistoryAurora 因为只收 -Configuration，补进发布登记当天就炸在这里——这个教训不必再吃一次。
-
-    给了 OutputRoot 就只扁平交付内容，不碰 z-Publish：版本化目录与归档由发布器统一做，
-    两边都做会让 history/ 出现同一版本的两份。
+    本地默认写出 `z-Publish/HistoryPortunus-vX.Y.Z/`。传入 OutputRoot 时该目录就是包根
+    （宿主 staging 或临时校验），不再为已删除的 Diana 发布器摊平 z-Publish 根。
 #>
 
 [CmdletBinding()]
@@ -80,7 +76,7 @@ try {
         New-Item -ItemType Directory -Path $staged -Force | Out-Null
         Get-ChildItem -LiteralPath $staged -Force | Remove-Item -Recurse -Force
         Copy-Item -Path (Join-Path $stage '*') -Destination $staged -Recurse -Force
-        Write-Host "HistoryPortunus $version staged for the publisher: $staged"
+        Write-Host "HistoryPortunus $version staged: $staged"
         return
     }
 
