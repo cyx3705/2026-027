@@ -14,6 +14,31 @@ namespace HistoryPortunus.Contracts;
 [Collection(TestCollections.Gateway)]
 public sealed class McpCommandBusIntegrationTests
 {
+    [Theory]
+    [InlineData("中文")]
+    [InlineData(@"\u4E2D\u6587")]
+    [InlineData("引号\"与\\反斜杠\r\n下一行\t制表😀")]
+    [InlineData("")]
+    [InlineData("x=1 other=2")]
+    public async Task JsonStringArgumentsReachHandlerUnchanged(string input)
+    {
+        var registry = new CommandRegistry();
+        registry.Register(new CommandDescriptor
+        {
+            Name = "probe.echo",
+            Domain = "probe",
+            Summary = "echo",
+            Readonly = true,
+            Parameters = [new ParameterSpec { Name = "text", Description = "input", Required = true }],
+            Handler = CommandDescriptor.Sync(ctx => CommandResult.Ok("echo", ctx.GetString("text"))),
+        });
+        using var json = JsonDocument.Parse(JsonSerializer.Serialize(new { text = input }));
+        var command = CommandSchemaExporter.BuildCommandText("probe.echo", json.RootElement);
+        var result = await new CommandBus(registry, new NullLog()).ExecuteAsync(command, "test");
+        Assert.True(result.Success, result.Message);
+        Assert.Equal(input, result.Data);
+    }
+
     [Fact]
     public async Task ModuleToolsListCallAndReloadUseTheSameLiveBackendRegistry()
     {

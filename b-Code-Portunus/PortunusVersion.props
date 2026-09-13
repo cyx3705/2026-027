@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <HistoryPortunusVersion>1.0.5</HistoryPortunusVersion>
+    <HistoryPortunusVersion>1.0.6</HistoryPortunusVersion>
     <!-- Portunus 消费的 HistoryVulcan 正式宿主版本，是宿主契约的唯一真源：
          发布脚本与质量门禁都从此读取，不再各自硬编码字面量。
          5.1.0 将模块公开面收敛为命令总线与注册器，并移除了旧 MCP/schema/client 类型。

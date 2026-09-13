@@ -87,31 +87,31 @@ public static class McpCommands
     };
 
     private static CommandDescriptor BuildStatus(Func<McpGateway?> gateway) => new()
+    {
+        Name = "portunus.mcp.status",
+        HiddenReason = "防止远程递归管理或关闭 MCP 服务",
+        Domain = "portunus",
+        CommandClass = "mcp",
+        Summary = "查看 MCP 服务状态(运行/端口/策略/暴露工具数/累计调用/最近一次调用)",
+        Example = "portunus.mcp.status",
+        Handler = CommandDescriptor.Sync(_ =>
         {
-            Name = "portunus.mcp.status",
-            HiddenReason = "防止远程递归管理或关闭 MCP 服务",
-            Domain = "portunus",
-            CommandClass = "mcp",
-            Summary = "查看 MCP 服务状态(运行/端口/策略/暴露工具数/累计调用/最近一次调用)",
-            Example = "portunus.mcp.status",
-            Handler = CommandDescriptor.Sync(_ =>
-            {
-                var g = gateway();
-                if (g == null)
-                    return CommandResult.Fail("网关未装配");
+            var g = gateway();
+            if (g == null)
+                return CommandResult.Fail("网关未装配");
 
-                var sb = new StringBuilder();
-                sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
-                sb.Append($"\n  策略   : {g.Policy}(缺省 standard;vulcan.app.set key=mcp.policy value=readonly 可收窄)");
-                sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
-                sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
-                sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
-                sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
-                          $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;host 档开启中继确认)")}");
-                sb.Append($"\n  调用   : 累计 {g.CallCount} 次,最近 {g.LastCall}");
-                return CommandResult.Ok(sb.ToString());
-            }),
-        };
+            var sb = new StringBuilder();
+            sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
+            sb.Append($"\n  策略   : {g.Policy}(缺省 standard;vulcan.app.set key=mcp.policy value=readonly 可收窄)");
+            sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
+            sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
+            sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
+            sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
+                      $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;host 档开启中继确认)")}");
+            sb.Append($"\n  调用   : 累计 {g.CallCount} 次,最近 {g.LastCall}");
+            return CommandResult.Ok(sb.ToString());
+        }),
+    };
 
     /// <summary>
     /// 持久开关：是否随宿主启动自动监听。与 start/stop 的区别是本命令写设置、跨会话生效。

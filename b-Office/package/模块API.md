@@ -51,3 +51,7 @@ Cursor 的 `%USERPROFILE%\.cursor\mcp.json` 里的 `history-vulcan` 由本模块
 
 模块运行时只使用宿主 `HistoryVulcan.Core` 的命令总线与命令注册器；
 不得引用宿主源码工程、`HistoryVulcan.Extensibility.dll`（5.0 已删）或历史 MCP 类型。
+
+## 1.0.6 参数保真
+
+MCP 字符串参数按原文传递给命令处理器，中文、换行及字面量反斜杠转义保持区分。命令文本使用宿主 QuoteArg 编码，调用方不应额外转义 Unicode。

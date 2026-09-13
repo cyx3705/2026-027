@@ -212,8 +212,10 @@ public sealed class CommandSchemaExporter(CommandRegistry registry)
         var argumentsText = values.EnumerateObject().Select(property =>
         {
             var value = property.Value.ValueKind == JsonValueKind.String
-                ? JsonSerializer.Serialize(property.Value.GetString())
+                ? property.Value.GetString() ?? ""
                 : property.Value.GetRawText();
+            // Command text has its own quoting grammar, not JSON string escapes.
+            value = CommandParser.QuoteArg(value);
             return $"{property.Name}={value}";
         });
         return string.Join(' ', new[] { commandName }.Concat(argumentsText));
