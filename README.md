@@ -2,8 +2,6 @@
 
 > 对外传输模块：把宿主指令总线投影为本机 MCP 与回环 Web
 
-![OneHistory Logo](./Logo.png)
-
 ## 定位
 
 HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费者，自己不产生任何业务能力。
@@ -80,6 +78,9 @@ dotnet test .\b-Code-Verify\Contracts\Contracts.csproj -c Release -p:NuGetAudit=
 - 它坏了不影响修复自己：把好包拷进 `%APPDATA%\HistoryVulcan\Modules\HistoryPortunus`，宿主文件监视会自己重载。
 - 部署包不携带任何 `HistoryVulcan.*.dll`；热重载要求 `Dispose` 时关闭 `HttpListener`，否则旧监听器继续占端口。
 
----
+## 保留内容
+- 本模板项目介绍：此为最初的准备的项目模板
+    每个分支项目都会由他去继承
+- 作者：Pinavia - 2025
 
-作者：Pinavia
+![logo](./Logo.png)
