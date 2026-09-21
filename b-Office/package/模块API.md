@@ -1,6 +1,6 @@
 # HistoryPortunus 模块 API
 
-模块版本：**1.0.5**；最低宿主：**HistoryVulcan 5.1**。
+模块版本：**1.0.6**；最低宿主：**HistoryVulcan 5.1.0**（单点声明在 `b-Code-Portunus/PortunusVersion.props`）。
 
 本文件是**总线面**合同。代码面（服务实现、反向解析、Schema 生成）在
 `b-Office/current/技术合同.md`；AI 面就是本模块**产出**的那一层，不在这里描述。
