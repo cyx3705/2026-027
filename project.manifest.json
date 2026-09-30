@@ -77,5 +77,34 @@
     "**/node_modules/**",
     "**/.vs/**",
     "artifacts/**"
-  ]
+  ],
+  "publish": {
+    "versionProps": "b-Code-Portunus\\PortunusVersion.props",
+    "versionProperty": "HistoryPortunusVersion",
+    "sourceManifest": "b-Code-Portunus\\module.manifest.json",
+    "package": {
+      "project": "b-Code-Portunus\\HistoryPortunus.csproj",
+      "files": [
+        "HistoryPortunus.dll",
+        "HistoryPortunus.xml",
+        "module.manifest.json"
+      ]
+    },
+    "validation": [
+      {
+        "tool": "dotnet.exe",
+        "configurations": [
+          "Release"
+        ],
+        "arguments": [
+          "test",
+          "b-Code-Verify\\Contracts\\Contracts.csproj",
+          "-c",
+          "{configuration}",
+          "-p:NuGetAudit=false"
+        ],
+        "description": "Run Portunus contract tests"
+      }
+    ]
+  }
 }
