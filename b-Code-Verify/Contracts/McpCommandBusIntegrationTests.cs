@@ -2,10 +2,8 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;
 
@@ -22,7 +20,7 @@ public sealed class McpCommandBusIntegrationTests
     [InlineData("x=1 other=2")]
     public async Task JsonStringArgumentsReachHandlerUnchanged(string input)
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "probe.echo",
@@ -34,7 +32,7 @@ public sealed class McpCommandBusIntegrationTests
         });
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(new { text = input }));
         var command = CommandSchemaExporter.BuildCommandText("probe.echo", json.RootElement);
-        var result = await new CommandBus(registry, new NullLog()).ExecuteAsync(command, "test");
+        var result = await new TestCommandBus(registry).ExecuteAsync(command, "test");
         Assert.True(result.Success, result.Message);
         Assert.Equal(input, result.Data);
     }
@@ -48,29 +46,30 @@ public sealed class McpCommandBusIntegrationTests
         var previousExposure = McpExposurePolicy.ModuleExposure;
         try
         {
-            var registry = new CommandRegistry();
-            RegisterModuleProbe(registry, "HistoryDiana", "diana.health", "diana-ok");
-            RegisterModuleProbe(registry, "HistoryJanus", "janus.health", "janus-ok");
-            RegisterModuleProbe(registry, "HistoryMercury", "mercury.health", "mercury-ok");
-            RegisterModuleProbe(registry, "HistoryMinerva", "minerva.health", "minerva-ok");
+            var registry = new TestRegistrar();
+            var catalog = new TestCatalog(registry);
+            RegisterModuleProbe(registry, catalog, "HistoryDiana", "diana.health", "diana-ok");
+            RegisterModuleProbe(registry, catalog, "HistoryJanus", "janus.health", "janus-ok");
+            RegisterModuleProbe(registry, catalog, "HistoryMercury", "mercury.health", "mercury-ok");
+            RegisterModuleProbe(registry, catalog, "HistoryMinerva", "minerva.health", "minerva-ok");
             var settings = new MemorySettings();
             settings.Set(McpSettingKeys.Policy, "standard");
             var log = new NullLog();
-            var bus = new CommandBus(registry, log);
+            var bus = new TestCommandBus(registry);
             var prompts = new PromptGovernanceStore(root, log);
             McpGateway? gateway = null;
             gateway = new McpGateway(
                 () => bus,
+                catalog,
                 settings,
                 log,
                 new NullAudit(),
                 prompts,
-                new HistoryVulcan.Core.ApplicationIdentity(
-                    "Test", "3.5.0", "3.5.0", "3.5.0.0"));
+                new HostIdentity("Test", "3.5.0"));
             using (gateway)
             {
                 McpCommands.RegisterAll(
-                    registry, () => bus, () => gateway, settings, prompts, "framework:service");
+                    registry, () => bus, catalog, () => gateway, settings, prompts);
                 var exposure = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["HistoryDiana"] = "standard",
@@ -80,7 +79,7 @@ public sealed class McpCommandBusIntegrationTests
                 };
                 McpExposurePolicy.ModuleOfCommand = command =>
                 {
-                    var source = registry.GetSource(command);
+                    var source = catalog.SourceOf(command);
                     return source.StartsWith("module:", StringComparison.OrdinalIgnoreCase)
                         ? source["module:".Length..]
                         : null;
@@ -115,7 +114,7 @@ public sealed class McpCommandBusIntegrationTests
                 }
 
                 registry.Unregister("janus.health");
-                RegisterModuleProbe(registry, "HistoryJanus", "janus.fresh", "fresh-ok");
+                RegisterModuleProbe(registry, catalog, "HistoryJanus", "janus.fresh", "fresh-ok");
                 exposure["HistoryMercury"] = "hidden";
                 using (var reloaded = await PostRpcAsync(client, 3, "tools/list", new { }))
                 {
@@ -137,7 +136,8 @@ public sealed class McpCommandBusIntegrationTests
     }
 
     private static void RegisterModuleProbe(
-        CommandRegistry registry,
+        TestRegistrar registry,
+        TestCatalog catalog,
         string owner,
         string name,
         string result)
@@ -149,7 +149,8 @@ public sealed class McpCommandBusIntegrationTests
             Summary = name,
             Readonly = true,
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(result)),
-        }, $"module:{owner}");
+        });
+        catalog.SetSource(name, $"module:{owner}");
     }
 
     private static HttpClient CreateClient(int port)
@@ -206,10 +207,9 @@ public sealed class McpCommandBusIntegrationTests
         public void RecordMcp(string client, string tool, string arguments, string result, long elapsedMs) { }
     }
 
-    private sealed class NullLog : IShellLog
+    private sealed class NullLog : IModuleLog
     {
         public void Log(ShellLogLevel level, string category, string message) { }
-        public event EventHandler<ShellLogEntry>? EntryAdded { add { } remove { } }
         public IReadOnlyList<ShellLogEntry> Snapshot() => [];
     }
 }

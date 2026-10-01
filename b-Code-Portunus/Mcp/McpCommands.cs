@@ -17,20 +17,20 @@ public static class McpCommands
 
     /// <summary>把 MCP 服务管理指令注册进指定注册表。</summary>
     public static void RegisterAll(
-        CommandRegistry registry, Func<CommandBus?> busAccessor,
-        Func<McpGateway?> gateway, HistoryVulcan.Core.Storage.ISettingsService settings,
-        PromptGovernanceStore prompts, string source = "app")
+        ICommandRegistrar registry, Func<ICommandBus?> busAccessor, ICommandCatalog catalog,
+        Func<McpGateway?> gateway, ISettingsService settings,
+        PromptGovernanceStore prompts)
     {
-        var exporter = new CommandSchemaExporter(registry)
+        var exporter = new CommandSchemaExporter(catalog)
         {
             DescriptionsProvider = prompts.AllEffectiveDescriptions,
         };
-        registry.Register(BuildSchema(exporter, registry), source);
-        registry.Register(BuildParse(busAccessor), source);
-        registry.Register(BuildStart(gateway), source);
-        registry.Register(BuildStop(gateway), source);
-        registry.Register(BuildStatus(gateway), source);
-        registry.Register(BuildAutostart(gateway, settings), source);
+        registry.Register(BuildSchema(exporter, catalog));
+        registry.Register(BuildParse(busAccessor));
+        registry.Register(BuildStart(gateway));
+        registry.Register(BuildStop(gateway));
+        registry.Register(BuildStatus(gateway));
+        registry.Register(BuildAutostart(gateway, settings));
 
         // vulcan.command.list / show / domains / manual 不在这里注册：
         // 它们是宿主的指令自省面，随宿主装配，不随本模块来去。
@@ -109,7 +109,14 @@ public static class McpCommands
             sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
                       $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;host 档开启中继确认)")}");
             sb.Append($"\n  调用   : 累计 {g.CallCount} 次,最近 {g.LastCall}");
-            return CommandResult.Ok(sb.ToString());
+            // 1.1.0:Data 给出地址,供要找 MCP 的模块经总线读取(HistoryDiana 的中继不再读 Cursor 配置或 endpoint.json)。
+            return CommandResult.Ok(sb.ToString(), new
+            {
+                running = g.IsRunning,
+                port = g.IsRunning ? g.Port : 0,
+                url = g.IsRunning ? CursorMcpConfig.UrlFor(g.Port) : null,
+                policy = g.Policy,
+            });
         }),
     };
 
@@ -117,7 +124,7 @@ public static class McpCommands
     /// 持久开关：是否随宿主启动自动监听。与 start/stop 的区别是本命令写设置、跨会话生效。
     /// </summary>
     private static CommandDescriptor BuildAutostart(
-        Func<McpGateway?> gateway, HistoryVulcan.Core.Storage.ISettingsService settings) => new()
+        Func<McpGateway?> gateway, ISettingsService settings) => new()
         {
             Name = "portunus.mcp.autostart",
             HiddenReason = "防止远程递归管理或关闭 MCP 服务",
@@ -159,7 +166,7 @@ public static class McpCommands
 
     // ---------------------------------------------------------------- portunus.mcp.schema(MC-05)
 
-    private static CommandDescriptor BuildSchema(CommandSchemaExporter exporter, CommandRegistry registry) => new()
+    private static CommandDescriptor BuildSchema(CommandSchemaExporter exporter, ICommandCatalog catalog) => new()
     {
         Name = "portunus.mcp.schema",
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
@@ -198,7 +205,7 @@ public static class McpCommands
             }
 
             var tools = exporter.ExportTools();
-            var total = registry.All().Count;
+            var total = catalog.All().Count;
             var sb = new StringBuilder();
             sb.Append($"MCP 工具清单: {tools.Count} 个(注册表 {total} 条指令,硬排除 {total - tools.Count} 条):");
             foreach (var t in tools)
@@ -218,7 +225,7 @@ public static class McpCommands
 
     // ---------------------------------------------------------------- portunus.mcp.parse(MC-06 验收入口)
 
-    private static CommandDescriptor BuildParse(Func<CommandBus?> busAccessor) => new()
+    private static CommandDescriptor BuildParse(Func<ICommandBus?> busAccessor) => new()
     {
         Name = "portunus.mcp.parse",
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",

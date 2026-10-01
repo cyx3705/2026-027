@@ -2,10 +2,8 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;
 
@@ -30,7 +28,7 @@ public sealed class McpSecurityTests
     public async Task DangerousToolsAreCallableOnlyWhileTheHostConfirmRelayIsOn()
     {
         var executions = new List<string>();
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(Probe("probe.readable", executions, readOnly: true));
         registry.Register(Probe(
             "probe.danger",
@@ -38,12 +36,9 @@ public sealed class McpSecurityTests
             readOnly: false,
             confirmPrompt: _ => "confirm"));
 
-        // 内层确认通道刻意留空：GatewayAwareConfirmation 此时只认 MCP 预批准，
-        // 于是危险指令能跑起来这件事，只可能是网关那道确认放行的，不会是别的兜底。
-        var bus = new CommandBus(registry, new NullLog())
-        {
-            Confirmation = new GatewayAwareConfirmation(null),
-        };
+        // 总线的确认通道只认 MCP 预批准：危险指令能跑起来这件事，只可能是网关那道确认放行的，
+        // 不会是别的兜底（宿主 6.0.0 起总线是窄接口，替身的确认回调直接读预批准域）。
+        var bus = new TestCommandBus(registry, _ => McpConfirmationScope.PreApproved);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
         settings.Set(McpSettingKeys.Confirm, "host");
@@ -97,7 +92,7 @@ public sealed class McpSecurityTests
     [Fact]
     public async Task AuditRedactsSensitiveArgumentsOnSuccessfulAndRejectedCalls()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "audit.success",
@@ -130,7 +125,7 @@ public sealed class McpSecurityTests
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("set")),
         });
 
-        var bus = new CommandBus(registry, new NullLog());
+        var bus = new TestCommandBus(registry);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
         var audit = new CaptureAudit();
@@ -186,7 +181,7 @@ public sealed class McpSecurityTests
     [Fact]
     public async Task EarlyToolsCallRejectionsAreAuditedWithoutLeakingArguments()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "audit.ready",
@@ -194,7 +189,7 @@ public sealed class McpSecurityTests
             Parameters = [Parameter("password")],
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("ok")),
         });
-        CommandBus? currentBus = new(registry, new NullLog());
+        TestCommandBus? currentBus = new(registry);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
         var audit = new CaptureAudit();
@@ -251,7 +246,7 @@ public sealed class McpSecurityTests
     [Fact]
     public async Task LoopbackDoesNotDemandBearerAndStillRejectsOversizedProtocol()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "auth.ready",
@@ -260,7 +255,7 @@ public sealed class McpSecurityTests
             Parameters = [Parameter("password")],
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("ok")),
         });
-        var bus = new CommandBus(registry, new NullLog());
+        var bus = new TestCommandBus(registry);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Token, "stale-token-must-be-ignored");
         var audit = new CaptureAudit();
@@ -314,7 +309,7 @@ public sealed class McpSecurityTests
     [Fact]
     public async Task InitializeBoundsClientMetadataBeforeCachingAndLogging()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "identity.read",
@@ -322,7 +317,7 @@ public sealed class McpSecurityTests
             Readonly = true,
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("ok")),
         });
-        var bus = new CommandBus(registry, new NullLog());
+        var bus = new TestCommandBus(registry);
         var settings = new MemorySettings();
         var audit = new CaptureAudit();
 
@@ -360,7 +355,7 @@ public sealed class McpSecurityTests
     [Fact]
     public async Task RemoteConfirmationExceptionsAreAuditedOnceWithoutMessageLeakage()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "secure.action",
@@ -370,7 +365,7 @@ public sealed class McpSecurityTests
             ConfirmPrompt = _ => "confirm",
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("should-not-run")),
         });
-        var bus = new CommandBus(registry, new NullLog());
+        var bus = new TestCommandBus(registry);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
         settings.Set(McpSettingKeys.Confirm, "host");
@@ -403,7 +398,7 @@ public sealed class McpSecurityTests
     public async Task RemoteConfirmationQueueTimesOutWithoutExecutingOrDuplicatingAudit()
     {
         var executions = 0;
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "queued.action",
@@ -416,7 +411,7 @@ public sealed class McpSecurityTests
                 return CommandResult.Ok("should-not-run");
             }),
         });
-        var bus = new CommandBus(registry, new NullLog());
+        var bus = new TestCommandBus(registry);
         var settings = new MemorySettings();
         settings.Set(McpSettingKeys.Policy, "standard");
         settings.Set(McpSettingKeys.Confirm, "host");
@@ -516,40 +511,40 @@ public sealed class McpSecurityTests
         => new() { Name = name, Description = name };
 
     private static async Task WithGatewayAsync(
-        CommandBus bus,
+        TestCommandBus bus,
         MemorySettings settings,
         CaptureAudit audit,
         Func<bool>? confirm,
         Func<HttpClient, Task> test,
-        IShellLog? log = null)
+        IModuleLog? log = null)
         => await WithGatewayAsync(() => bus, settings, audit, confirm, test, log);
 
     private static async Task WithGatewayAsync(
-        CommandBus bus,
+        TestCommandBus bus,
         MemorySettings settings,
         CaptureAudit audit,
         Func<bool>? confirm,
         Func<McpGateway, HttpClient, Task> test,
-        IShellLog? log = null)
+        IModuleLog? log = null)
         => await WithGatewayAsync(() => bus, settings, audit, confirm, test, log);
 
     private static async Task WithGatewayAsync(
-        Func<CommandBus?> busAccessor,
+        Func<TestCommandBus?> busAccessor,
         MemorySettings settings,
         CaptureAudit audit,
         Func<bool>? confirm,
         Func<HttpClient, Task> test,
-        IShellLog? log = null)
+        IModuleLog? log = null)
         => await WithGatewayAsync(
             busAccessor, settings, audit, confirm, (_, client) => test(client), log);
 
     private static async Task WithGatewayAsync(
-        Func<CommandBus?> busAccessor,
+        Func<TestCommandBus?> busAccessor,
         MemorySettings settings,
         CaptureAudit audit,
         Func<bool>? confirm,
         Func<McpGateway, HttpClient, Task> test,
-        IShellLog? log = null)
+        IModuleLog? log = null)
     {
         var root = Path.Combine(Path.GetTempPath(), "HistoryVulcan-mcp-security-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -558,11 +553,12 @@ public sealed class McpSecurityTests
             var gatewayLog = log ?? new NullLog();
             using var gateway = new McpGateway(
                 busAccessor,
+                new TestCatalog(() => busAccessor()?.Registrar),
                 settings,
                 gatewayLog,
                 audit,
                 new PromptGovernanceStore(root, gatewayLog),
-                new HistoryVulcan.Core.ApplicationIdentity("Test", "3.0.0", "3.0.0", "3.0.0.0"),
+                new HostIdentity("Test", "3.0.0"),
                 confirm == null ? null : (_, _, _) => confirm());
             var started = gateway.Start(FreePort());
             Assert.True(started.Success, started.Message);
@@ -654,19 +650,17 @@ public sealed class McpSecurityTests
         string Result,
         long ElapsedMs);
 
-    private sealed class CaptureLog : IShellLog
+    private sealed class CaptureLog : IModuleLog
     {
         public List<ShellLogEntry> Entries { get; } = [];
         public void Log(ShellLogLevel level, string category, string message)
             => Entries.Add(new ShellLogEntry(DateTime.Now, level, category, message));
-        public event EventHandler<ShellLogEntry>? EntryAdded { add { } remove { } }
         public IReadOnlyList<ShellLogEntry> Snapshot() => Entries;
     }
 
-    private sealed class NullLog : IShellLog
+    private sealed class NullLog : IModuleLog
     {
         public void Log(ShellLogLevel level, string category, string message) { }
-        public event EventHandler<ShellLogEntry>? EntryAdded { add { } remove { } }
         public IReadOnlyList<ShellLogEntry> Snapshot() => [];
     }
 }

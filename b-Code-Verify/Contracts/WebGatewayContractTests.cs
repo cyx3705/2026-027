@@ -6,7 +6,6 @@ using System.Text.Json;
 using HistoryPortunus.Web;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using Xunit;
 
 namespace HistoryPortunus.Contracts;
@@ -23,6 +22,8 @@ namespace HistoryPortunus.Contracts;
 [Collection(TestCollections.Gateway)]
 public sealed class WebGatewayContractTests
 {
+    private static readonly HostIdentity Identity = new("HistoryVulcan", "6.0.0");
+
     /// <summary>
     /// 回环与请求头都可以被任意本机进程伪造，真正的边界只有一次性凭据。
     ///
@@ -32,7 +33,7 @@ public sealed class WebGatewayContractTests
     [Fact]
     public async Task GatewayAcceptsOnlyTheLoopbackShellSession()
     {
-        var registry = new CommandRegistry();
+        var registry = new TestRegistrar();
         registry.Register(new CommandDescriptor
         {
             Name = "unsafe.write",
@@ -40,8 +41,8 @@ public sealed class WebGatewayContractTests
             Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("must-not-run")),
         });
         var log = new MemoryLog();
-        var bus = new CommandBus(registry, log);
-        using var gateway = new WebGateway(() => bus, new MemorySettings(), log);
+        var bus = new TestCommandBus(registry);
+        using var gateway = new WebGateway(() => bus, new TestCatalog(bus.Registrar), Identity, new MemorySettings(), log);
         Assert.True(gateway.Start(FreePort()).Success);
 
         // 不声明 X-HistoryVulcan-Client: Shell 的回环调用方一律 401。
@@ -98,7 +99,7 @@ public sealed class WebGatewayContractTests
     {
         var log = new MemoryLog();
         using var gateway = new WebGateway(
-            () => new CommandBus(new CommandRegistry(), log), new MemorySettings(), log);
+            () => new TestCommandBus(new TestRegistrar()), new TestCatalog(() => null), Identity, new MemorySettings(), log);
 
         Assert.True(gateway.Start(FreePort()).Success);
         var first = gateway.AccessToken;
@@ -117,7 +118,7 @@ public sealed class WebGatewayContractTests
     {
         var settings = new MemorySettings();
         using var gateway = new WebGateway(
-            () => new CommandBus(new CommandRegistry(), new MemoryLog()), settings, new MemoryLog());
+            () => new TestCommandBus(new TestRegistrar()), new TestCatalog(() => null), Identity, settings, new MemoryLog());
 
         Assert.False(gateway.AutostartEnabled);
         Assert.True(gateway.TryAutostart().Success);
@@ -134,7 +135,9 @@ public sealed class WebGatewayContractTests
     public async Task RejectsRequestBodiesOverOneMiBBeforeDeserialization()
     {
         var gateway = new WebGateway(
-            () => new CommandBus(new CommandRegistry(), new MemoryLog()),
+            () => new TestCommandBus(new TestRegistrar()),
+            new TestCatalog(() => null),
+            Identity,
             new MemorySettings(),
             new MemoryLog());
         using (gateway)
@@ -185,7 +188,7 @@ public sealed class WebGatewayContractTests
         public IReadOnlyList<KeyValuePair<string, string>> All() => _values.ToList();
     }
 
-    private sealed class MemoryLog : IShellLog
+    private sealed class MemoryLog : IModuleLog
     {
         private readonly List<ShellLogEntry> _entries = [];
 
@@ -194,10 +197,8 @@ public sealed class WebGatewayContractTests
             var entry = new ShellLogEntry(DateTime.UtcNow, level, category, message);
             lock (_entries)
                 _entries.Add(entry);
-            EntryAdded?.Invoke(this, entry);
         }
 
-        public event EventHandler<ShellLogEntry>? EntryAdded;
 
         public IReadOnlyList<ShellLogEntry> Snapshot()
         {

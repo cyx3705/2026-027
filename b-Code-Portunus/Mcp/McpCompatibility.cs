@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HistoryVulcan.Core.Commands;
-using HistoryVulcan.Core.Storage;
 
 namespace HistoryPortunus.Mcp;
 
@@ -104,7 +103,7 @@ public static class McpExposurePolicy
            || commandName.Equals("vulcan.command.show", StringComparison.OrdinalIgnoreCase)
            || commandName.Equals("vulcan.command.domains", StringComparison.OrdinalIgnoreCase);
 
-    public static string? HardExclusionReason(CommandDescriptor descriptor)
+    public static string? HardExclusionReason(CatalogCommand descriptor)
     {
         if (!string.IsNullOrWhiteSpace(descriptor.HiddenReason))
             return descriptor.HiddenReason;
@@ -123,16 +122,16 @@ public static class McpExposurePolicy
             : null;
     }
 
-    public static string State(CommandDescriptor descriptor)
+    public static string State(CatalogCommand descriptor)
     {
         if (HardExclusionReason(descriptor) != null)
             return "hidden";
-        return descriptor.Level == CommandLevel.Ask ? "ask" : descriptor.Readonly ? "readonly" : "standard";
+        return descriptor.Ask ? "ask" : descriptor.Readonly ? "readonly" : "standard";
     }
 
-    public static bool IsVisible(CommandDescriptor descriptor, string policy)
+    public static bool IsVisible(CatalogCommand descriptor, string policy)
     {
-        if (HardExclusionReason(descriptor) != null || descriptor.Level == CommandLevel.Ask)
+        if (HardExclusionReason(descriptor) != null || descriptor.Ask)
             return false;
         return policy.Equals("standard", StringComparison.OrdinalIgnoreCase)
                || descriptor.Readonly
@@ -155,13 +154,6 @@ public static class McpConfirmationScope
     }
 }
 
-/// <summary>Confirmation implementation used by integration tests and the Portunus relay path.</summary>
-public sealed class GatewayAwareConfirmation(HistoryVulcan.Core.Commands.IConfirmationService? inner)
-    : HistoryVulcan.Core.Commands.IConfirmationService
-{
-    public bool Confirm(string prompt) => McpConfirmationScope.PreApproved || inner?.Confirm(prompt) == true;
-}
-
 /// <summary>Validates persisted description text before it is projected to MCP clients.</summary>
 public static class PromptTextIntegrity
 {
@@ -174,8 +166,8 @@ public static class PromptTextIntegrity
     }
 }
 
-/// <summary>Transport-owned MCP schema projection for the host command registry.</summary>
-public sealed class CommandSchemaExporter(CommandRegistry registry)
+/// <summary>Transport-owned MCP schema projection for the host command catalog.</summary>
+public sealed class CommandSchemaExporter(ICommandCatalog catalog)
 {
     public Func<IReadOnlyDictionary<string, string>>? DescriptionsProvider { get; init; }
 
@@ -184,7 +176,7 @@ public sealed class CommandSchemaExporter(CommandRegistry registry)
         var descriptions = DescriptionsProvider?.Invoke()
                            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return registry.All()
+        return catalog.All()
             .Where(descriptor => McpExposurePolicy.HardExclusionReason(descriptor) == null)
             .OrderBy(descriptor => descriptor.Name, StringComparer.OrdinalIgnoreCase)
             .Select(descriptor => CreateTool(descriptor, descriptions, used))
@@ -222,7 +214,7 @@ public sealed class CommandSchemaExporter(CommandRegistry registry)
     }
 
     private static McpToolInfo CreateTool(
-        CommandDescriptor descriptor,
+        CatalogCommand descriptor,
         IReadOnlyDictionary<string, string> descriptions,
         HashSet<string> used)
     {
@@ -236,16 +228,16 @@ public sealed class CommandSchemaExporter(CommandRegistry registry)
         {
             var schema = new JsonObject
             {
-                ["type"] = parameter.Type switch
+                ["type"] = parameter.Type.ToLowerInvariant() switch
                 {
-                    ParamType.Int => "integer",
-                    ParamType.Double => "number",
-                    ParamType.Bool => "boolean",
+                    "int" => "integer",
+                    "double" => "number",
+                    "bool" => "boolean",
                     _ => "string",
                 },
                 ["description"] = parameter.Description,
             };
-            if (parameter.AllowedValues is { Length: > 0 })
+            if (parameter.AllowedValues is { Count: > 0 })
                 schema["enum"] = new JsonArray(parameter.AllowedValues
                     .Select(value => (JsonNode?)JsonValue.Create(value)).ToArray());
             if (!string.IsNullOrWhiteSpace(parameter.Default))
@@ -269,7 +261,7 @@ public sealed class CommandSchemaExporter(CommandRegistry registry)
             descriptor.Name,
             customized ? description! : defaultDescription,
             inputSchema,
-            descriptor.Level == CommandLevel.Ask,
+            descriptor.Ask,
             defaultDescription,
             customized);
     }

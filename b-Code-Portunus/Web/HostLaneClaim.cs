@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using HistoryVulcan.Core.Logging;
+using HistoryVulcan.Core.Modules;
 
 namespace HistoryPortunus.Web;
 
@@ -29,10 +30,9 @@ internal static class HostLaneClaim
     /// 尝试取得本机对外航线的所有权。
     /// </summary>
     /// <returns>true 表示可以开监听；false 表示已有活着的宿主占用，本进程应保持静默。</returns>
-    internal static bool TryClaim(string endpointFile, IShellLog log)
+    internal static bool TryClaim(string endpointFile, IModuleLog log, HostRunMode runMode)
     {
-        using var self = Process.GetCurrentProcess();
-        if (!ShouldOpenListeners(self.ProcessName, Environment.GetCommandLineArgs()))
+        if (!ShouldOpenListeners(runMode))
         {
             log.Info("web", "离线 CLI / 手册导出不开对外航线，也不改 endpoint.json");
             return false;
@@ -104,28 +104,13 @@ internal static class HostLaneClaim
     }
 
     /// <summary>
-    /// 只有真正的服务宿主才开端口。<c>HistoryVulcan.Cli</c> 和带 <c>--cli</c> 的离线组合
+    /// 只有真正的服务宿主才开端口。离线命令行（<c>--cli</c>）与测试装载（<c>--probe</c>）
     /// 也会装载本模块（为了手册和门禁），但它们不是航线持有者：一旦误判成功，
     /// <see cref="PortunusComposition.Dispose"/> 会把活宿主的 <c>endpoint.json</c> 删掉。
     /// </summary>
-    internal static bool ShouldOpenListeners(string processName, IReadOnlyList<string> arguments)
-    {
-        if (processName.EndsWith(".Cli", StringComparison.OrdinalIgnoreCase)
-            || processName.Contains("Cli", StringComparison.OrdinalIgnoreCase)
-                && processName.Contains("HistoryVulcan", StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        foreach (var argument in arguments)
-        {
-            if (argument.Equals("--cli", StringComparison.OrdinalIgnoreCase)
-                || argument.Equals("--export-command-manual", StringComparison.OrdinalIgnoreCase))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
+    /// <remarks>
+    /// 1.1.0 起按宿主给的运行方式判断（宿主 6.0.0 统一契约 <c>IModuleEnvironment.RunMode</c>）。
+    /// 此前读进程名与进程参数里的 <c>--cli</c> 自己猜，宿主一改入口参数就会猜错。
+    /// </remarks>
+    internal static bool ShouldOpenListeners(HostRunMode runMode) => runMode == HostRunMode.Service;
 }

@@ -77,12 +77,12 @@ public sealed class PromptGovernanceStore : IEffectivePromptDescriptionReader, I
     };
 
     private readonly string _path;
-    private readonly IShellLog _log;
+    private readonly IModuleLog _log;
     private readonly object _writeGate = new();
     private State _state;
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
-    public PromptGovernanceStore(string dataDirectory, IShellLog log)
+    public PromptGovernanceStore(string dataDirectory, IModuleLog log)
     {
         _path = Path.Combine(dataDirectory, "state", "prompt-governance.json");
         _log = log;

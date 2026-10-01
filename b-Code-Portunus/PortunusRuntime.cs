@@ -1,19 +1,63 @@
 using System.Diagnostics;
 using System.Text.Json;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 
 namespace HistoryPortunus;
 
-/// <summary>Owns the transport state that HistoryVulcan 5.1 intentionally no longer exposes to modules.</summary>
+/// <summary>Portunus 自己的扁平设置读写口（mcp.* / web.*）。</summary>
+/// <remarks>
+/// 1.1.0 之前借用宿主的 <c>ISettingsService</c>；宿主 6.0.0 起那是宿主内部类型，
+/// 模块只能用契约程序集白名单里的类型，于是接口搬回本仓，形状不变。
+/// </remarks>
+public interface ISettingsService
+{
+    string? Get(string key);
+
+    int GetInt(string key, int fallback);
+
+    void Set(string key, string value);
+
+    IReadOnlyList<KeyValuePair<string, string>> All();
+}
+
+/// <summary>网关对外自报的宿主身份：serverInfo 与默认端口派生用。</summary>
+public sealed record HostIdentity(string Name, string Version);
+
+/// <summary>模块自持的运行态：数据目录下的设置、治理库、审计与日志。</summary>
+/// <remarks>
+/// 1.1.0 起数据目录由宿主给（宿主 6.0.0 统一契约，<c>IModuleContext.Environment.DataDirectory</c>）。
+/// 1.0.x 写在宿主数据根 <c>state\</c> 与 <c>service\</c> 下的旧文件已在宿主 6.0.0 切换时一次性搬过来，模块不再认旧布局。
+/// </remarks>
 internal static class PortunusRuntime
 {
-    private static readonly string Root = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HistoryVulcan");
+    /// <summary>宿主产品名。默认端口由 <c>&lt;名&gt;.service</c> 稳定派生，改一个字符端口就整体漂移。</summary>
+    internal const string HostName = "HistoryVulcan";
 
-    internal static string ApplicationRoot => Root;
-    internal static ISettingsService Settings { get; } = new FileSettingsService(Path.Combine(Root, "state", "portunus-settings.json"));
-    internal static IShellLog Log { get; } = new TraceShellLog();
+    private static readonly object Gate = new();
+    private static string? _root;
+    private static ISettingsService? _settings;
+
+    internal static string DataRoot => _root ?? throw new InvalidOperationException("Portunus 尚未接入宿主，数据目录未知。");
+
+    internal static ISettingsService Settings
+        => _settings ?? throw new InvalidOperationException("Portunus 尚未接入宿主，设置库未打开。");
+
+    internal static IModuleLog Log { get; } = new FileLog();
+
+    /// <summary>接入时由宿主给数据目录；同一目录重复接入（热重载）沿用已打开的设置库。</summary>
+    internal static void Use(string dataDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+        var root = Path.GetFullPath(dataDirectory);
+        lock (Gate)
+        {
+            if (string.Equals(_root, root, StringComparison.OrdinalIgnoreCase) && _settings != null)
+                return;
+            Directory.CreateDirectory(root);
+            _root = root;
+            _settings = new FileSettingsService(Path.Combine(root, "state", "portunus-settings.json"));
+        }
+    }
 
     private sealed class FileSettingsService(string path) : ISettingsService
     {
@@ -79,33 +123,21 @@ internal static class PortunusRuntime
         }
     }
 
-    private sealed class TraceShellLog : IShellLog
+    /// <summary>写 Trace 与数据目录 <c>logs\</c> 的轻量日志；接入前只写 Trace。</summary>
+    private sealed class FileLog : IModuleLog
     {
-        private readonly List<ShellLogEntry> _entries = [];
-
-        public event EventHandler<ShellLogEntry>? EntryAdded;
-
         public void Log(ShellLogLevel level, string category, string message)
         {
-            var entry = new ShellLogEntry(DateTime.UtcNow, level, category, message);
-            lock (_entries)
-                _entries.Add(entry);
             Trace.WriteLine($"[HistoryPortunus:{category}] {message}");
-            TryAppendFile(entry);
-            EntryAdded?.Invoke(this, entry);
-        }
-
-        private static void TryAppendFile(ShellLogEntry entry)
-        {
+            var root = _root;
+            if (root == null)
+                return;
             try
             {
-                var directory = Path.Combine(Root, "service", "logs");
+                var directory = Path.Combine(root, "logs");
                 Directory.CreateDirectory(directory);
-                var line =
-                    $"{DateTime.Now:HH:mm:ss.fff} [{entry.Level}] [{entry.Category}] {entry.Message}{Environment.NewLine}";
-                File.AppendAllText(
-                    Path.Combine(directory, $"portunus-{DateTime.Now:yyyyMMdd}.log"),
-                    line);
+                var line = $"{DateTime.Now:HH:mm:ss.fff} [{level}] [{category}] {message}{Environment.NewLine}";
+                File.AppendAllText(Path.Combine(directory, $"portunus-{DateTime.Now:yyyyMMdd}.log"), line);
             }
             catch (IOException)
             {
@@ -113,12 +145,6 @@ internal static class PortunusRuntime
             catch (UnauthorizedAccessException)
             {
             }
-        }
-
-        public IReadOnlyList<ShellLogEntry> Snapshot()
-        {
-            lock (_entries)
-                return _entries.ToList();
         }
     }
 }

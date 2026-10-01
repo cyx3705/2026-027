@@ -72,9 +72,9 @@ dotnet test .\b-Code-Verify\Contracts\Contracts.csproj -c Release -p:NuGetAudit=
 
 ## 要点
 
-- **客户端每次调用前重读 `%APPDATA%\HistoryVulcan\service\endpoint.json`。** Web 令牌随每一轮模块热重载换发，缓存令牌下一次重载就会 401；文件不存在即此刻没有 Web 入口。
+- **客户端每次调用前重读 `%APPDATA%\HistoryVulcan\ModuleData\HistoryPortunus\endpoint.json`。** Web 令牌随每一轮模块热重载换发，缓存令牌下一次重载就会 401；文件不存在即此刻没有 Web 入口。
 - `vulcan.module.install` / `reload` 会拆掉正在服务它们的监听器：客户端看到断连（约 1 秒），指令本身已成功。应重读 endpoint 再查询确认，不要当成失败。
-- 设置在 `%APPDATA%\HistoryVulcan\state\portunus-settings.json`：`mcp.autostart` / `web.autostart` 控制自启动，端口固定、占用即失败不漂移。
+- 设置在 `%APPDATA%\HistoryVulcan\ModuleData\HistoryPortunus\state\portunus-settings.json`：`mcp.autostart` / `web.autostart` 控制自启动，端口固定、占用即失败不漂移。
 - 它坏了不影响修复自己：把好包拷进 `%APPDATA%\HistoryVulcan\Modules\HistoryPortunus`，宿主文件监视会自己重载。
 - 部署包不携带任何 `HistoryVulcan.*.dll`；热重载要求 `Dispose` 时关闭 `HttpListener`，否则旧监听器继续占端口。
 

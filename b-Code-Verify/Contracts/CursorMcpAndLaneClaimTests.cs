@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using HistoryPortunus.Mcp;
 using HistoryPortunus.Web;
 using HistoryVulcan.Core.Logging;
+using HistoryVulcan.Core.Modules;
 using Xunit;
 
 namespace HistoryPortunus.Contracts;
@@ -44,14 +45,13 @@ public sealed class CursorMcpAndLaneClaimTests
         }
     }
 
+    // 1.1.0：按宿主给的运行方式判断，不再读进程名与进程参数（宿主 6.0.0 统一契约）。
     [Theory]
-    [InlineData("HistoryVulcan.Cli", new string[] { }, false)]
-    [InlineData("HistoryVulcan", new[] { "--cli" }, false)]
-    [InlineData("HistoryVulcan", new[] { "--export-command-manual" }, false)]
-    [InlineData("HistoryVulcan", new string[] { }, true)]
-    [InlineData("testhost", new string[] { }, true)]
-    public void OnlyTheServiceHostOpensListeners(string processName, string[] arguments, bool expected)
-        => Assert.Equal(expected, HostLaneClaim.ShouldOpenListeners(processName, arguments));
+    [InlineData(HostRunMode.Service, true)]
+    [InlineData(HostRunMode.OfflineCli, false)]
+    [InlineData(HostRunMode.Probe, false)]
+    public void OnlyTheServiceHostOpensListeners(HostRunMode runMode, bool expected)
+        => Assert.Equal(expected, HostLaneClaim.ShouldOpenListeners(runMode));
 
     [Fact]
     public void UnsetPolicyIsStandard()
@@ -62,16 +62,15 @@ public sealed class CursorMcpAndLaneClaimTests
         Assert.Equal("readonly", McpSettingKeys.ResolvePolicy(settings));
     }
 
-    private sealed class CaptureLog : IShellLog
+    private sealed class CaptureLog : IModuleLog
     {
         public List<ShellLogEntry> Entries { get; } = [];
         public void Log(ShellLogLevel level, string category, string message)
             => Entries.Add(new ShellLogEntry(DateTime.Now, level, category, message));
-        public event EventHandler<ShellLogEntry>? EntryAdded { add { } remove { } }
         public IReadOnlyList<ShellLogEntry> Snapshot() => Entries;
     }
 
-    private sealed class MemorySettings : HistoryVulcan.Core.Storage.ISettingsService
+    private sealed class MemorySettings : ISettingsService
     {
         private readonly Dictionary<string, string> _values = new(StringComparer.OrdinalIgnoreCase);
         public string? Get(string key) => _values.GetValueOrDefault(key);

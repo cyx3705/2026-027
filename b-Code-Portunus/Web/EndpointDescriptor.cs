@@ -22,7 +22,7 @@ internal static class EndpointDescriptor
     internal const string FileName = "endpoint.json";
 
     internal static void Write(
-        string path, int port, string serverId, string accessToken, IShellLog log)
+        string path, int port, string serverId, string accessToken, IModuleLog log)
     {
         try
         {

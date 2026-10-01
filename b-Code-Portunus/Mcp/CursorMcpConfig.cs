@@ -30,7 +30,7 @@ internal static class CursorMcpConfig
     internal static string UrlFor(int port)
         => $"http://127.0.0.1:{port}/mcp";
 
-    internal static void Sync(int port, IShellLog log, string? path = null)
+    internal static void Sync(int port, IModuleLog log, string? path = null)
     {
         var file = string.IsNullOrWhiteSpace(path) ? DefaultPath : path;
         try

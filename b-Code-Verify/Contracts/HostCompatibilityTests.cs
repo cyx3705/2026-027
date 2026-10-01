@@ -8,11 +8,11 @@ namespace HistoryPortunus.Contracts;
 public sealed class HostCompatibilityTests
 {
     [Fact]
-    public void ModuleTargetsThePublishedFivePointOneHostSurfaceWithoutLegacyAssemblies()
+    public void ModuleTargetsTheSixPointZeroContractSurfaceWithoutLegacyAssemblies()
     {
-        var hostVersion = typeof(CommandBus).Assembly.GetName().Version;
+        var hostVersion = typeof(ICommandBus).Assembly.GetName().Version;
         Assert.NotNull(hostVersion);
-        Assert.True(hostVersion!.Major > 5 || hostVersion.Major == 5 && hostVersion.Minor >= 1);
+        Assert.True(hostVersion!.Major >= 6, $"宿主契约程序集 {hostVersion} 早于 6.0.0");
 
         var references = typeof(PortunusComposition).Assembly.GetReferencedAssemblies()
             .Select(reference => reference.Name)

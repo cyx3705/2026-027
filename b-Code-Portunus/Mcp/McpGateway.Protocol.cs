@@ -4,9 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HistoryVulcan.Core.Commands;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 
 using HistoryPortunus.Web;
 
@@ -39,41 +37,8 @@ public sealed partial class McpGateway : IDisposable
         return normalized[..length];
     }
 
-    private string? BuildConfirmPrompt(
-        ClientSession session,
-        CommandBus bus,
-        string commandName,
-        JsonElement? arguments)
-    {
-        if (!bus.Registry.TryGet(commandName, out var descriptor) || descriptor.ConfirmPrompt == null)
-            return null;
-
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        if (arguments is { ValueKind: JsonValueKind.Object } obj)
-        {
-            foreach (var prop in obj.EnumerateObject())
-            {
-                values[prop.Name] = prop.Value.ValueKind switch
-                {
-                    JsonValueKind.String => prop.Value.GetString() ?? "",
-                    JsonValueKind.True => "true",
-                    JsonValueKind.False => "false",
-                    _ => prop.Value.GetRawText(),
-                };
-            }
-        }
-
-        try
-        {
-            var ctx = new CommandContext(descriptor, values, $"MCP:{session.Name}", null, CancellationToken.None);
-            return descriptor.ConfirmPrompt(ctx);
-        }
-        catch (Exception)
-        {
-            // 文案构建失败不影响中继:回落到通用提示,人工仍能裁决
-            return $"远程请求执行危险指令: {commandName}\n(参数: {(arguments?.GetRawText() ?? "{}")})";
-        }
-    }
+    private static string BuildConfirmPrompt(string commandName, JsonElement? arguments)
+        => $"远程请求执行需要确认的指令: {commandName}\n(参数: {(arguments?.GetRawText() ?? "{}")})";
 
     private ClientSession ResolveSession(HttpListenerRequest request)
     {

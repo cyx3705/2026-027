@@ -1,6 +1,4 @@
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;
 using System.Net;
@@ -130,11 +128,12 @@ public sealed class McpGatewayPortTests
             var log = new NullLog();
             var gateway = new McpGateway(
                 () => null,
+                new TestCatalog(() => null),
                 settings,
                 log,
                 new NullAudit(),
                 new PromptGovernanceStore(root, log),
-                new HistoryVulcan.Core.ApplicationIdentity(appName, "3.0.0", "3.0.0", "3.0.0.0"));
+                new HostIdentity(appName, "3.0.0"));
             return new Fixture(root, settings, gateway);
         }
 
@@ -168,10 +167,9 @@ public sealed class McpGatewayPortTests
         public void RecordMcp(string client, string tool, string arguments, string result, long elapsedMs) { }
     }
 
-    private sealed class NullLog : IShellLog
+    private sealed class NullLog : IModuleLog
     {
         public void Log(ShellLogLevel level, string category, string message) { }
-        public event EventHandler<ShellLogEntry>? EntryAdded { add { } remove { } }
         public IReadOnlyList<ShellLogEntry> Snapshot() => [];
     }
 }

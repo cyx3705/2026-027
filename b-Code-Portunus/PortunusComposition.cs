@@ -1,6 +1,5 @@
 ﻿using HistoryPortunus.Mcp;
 using HistoryPortunus.Web;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
 using HistoryVulcan.Core.Modules;
 
@@ -30,7 +29,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     /// 已经握着旧 endpoint.json 的客户端会连到一个没人监听的端口上。
     /// 迁出宿主前它由 <c>ServiceComposer</c> 以同样的方式拼出。
     /// </summary>
-    private static string ServiceId => AppIdentity.Current.Name + ".service";
+    private const string ServiceId = PortunusRuntime.HostName + ".service";
 
     private readonly object _gate = new();
     private IModuleContext? _context;
@@ -46,18 +45,22 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
         lock (_gate)
         {
             _context = context;
-            var endpointFile = Path.Combine(PortunusRuntime.ApplicationRoot, "service", EndpointDescriptor.FileName);
+            // 1.1.0：数据目录由宿主给（宿主 6.0.0 统一契约），设置、治理、审计、日志与 endpoint.json 都在这里。
+            PortunusRuntime.Use(context.Environment.DataDirectory);
+            var endpointFile = Path.Combine(PortunusRuntime.DataRoot, EndpointDescriptor.FileName);
+            var catalog = new BusCommandCatalog(() => context.Bus);
+            var identity = new HostIdentity(PortunusRuntime.HostName, context.Environment.HostVersion);
 
             // 先认领本机航线，再开监听。装载本模块的进程不一定是提供服务的那个——
-            // `--cli` / `--export-command-manual` 为了让手册忠实反映注册表也会装载全部模块。
-            var claimed = HostLaneClaim.TryClaim(endpointFile, PortunusRuntime.Log);
+            // `--cli` / `--probe` / `--export-command-manual` 为了让手册忠实反映注册表也会装载全部模块。
+            var claimed = HostLaneClaim.TryClaim(endpointFile, PortunusRuntime.Log, context.Environment.RunMode);
             if (claimed)
             {
                 _endpointFile = endpointFile;
-                StartWeb(context, PortunusRuntime.Settings, PortunusRuntime.Log);
+                StartWeb(context, catalog, identity, PortunusRuntime.Settings, PortunusRuntime.Log);
             }
 
-            StartMcp(context, PortunusRuntime.Settings, PortunusRuntime.Log, listen: claimed);
+            StartMcp(context, catalog, identity, PortunusRuntime.Settings, PortunusRuntime.Log, listen: claimed);
         }
     }
 
@@ -115,10 +118,12 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
 
     private void StartWeb(
         IModuleContext context,
-        HistoryVulcan.Core.Storage.ISettingsService settings,
-        IShellLog log)
+        ICommandCatalog catalog,
+        HostIdentity identity,
+        ISettingsService settings,
+        IModuleLog log)
     {
-        var web = new WebGateway(() => context.Bus, settings, log)
+        var web = new WebGateway(() => context.Bus, catalog, identity, settings, log)
         {
             ServerId = ServiceId,
         };
@@ -147,9 +152,8 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     /// 装配 MCP 航线：治理库、审计、网关、管理指令，并把治理视图挂上总线。
     /// </summary>
     /// <remarks>
-    /// 治理与审计的落盘位置**刻意仍在应用数据根**（<c>%AppData%\HistoryVulcan</c>），
-    /// 不跟着模块走。修订与调用历史是长期资产，让它随一个可热重载的模块搬家，
-    /// 等于把「谁改过工具描述、谁调用过什么」的连续性绑在模块的生命周期上。
+    /// 治理与审计落在宿主给的数据目录（1.1.0 起，<c>ModuleData\HistoryPortunus\state</c>）。
+    /// 这个目录独立于包槽位：装包、热重载、卸载都不动它，修订与调用历史因此不随模块的生命周期断开。
     ///
     /// 与 Web 不同，MCP **不由本方法直接开监听**：是否随宿主起听由
     /// <c>mcp.autostart</c> 决定，沿用迁出前 <c>ServiceHost</c> 的 <c>TryAutostart</c> 语义。
@@ -157,34 +161,43 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     /// </remarks>
     private void StartMcp(
         IModuleContext context,
-        HistoryVulcan.Core.Storage.ISettingsService settings,
-        IShellLog log,
+        ICommandCatalog catalog,
+        HostIdentity identity,
+        ISettingsService settings,
+        IModuleLog log,
         bool listen)
     {
-        var applicationRoot = PortunusRuntime.ApplicationRoot;
+        var dataRoot = PortunusRuntime.DataRoot;
 
-        var prompts = new PromptGovernanceStore(applicationRoot, log);
-        var audit = new McpAuditRecorder(applicationRoot, log);
+        var prompts = new PromptGovernanceStore(dataRoot, log);
+        var audit = new McpAuditRecorder(dataRoot, log);
 
         var gateway = new McpGateway(
             () => context.Bus,
+            catalog,
             settings,
             log,
             audit,
             prompts,
-            AppIdentity.Current,
+            identity,
             RefuseRemoteConfirmation(log),
-            (port, mcpLog) => CursorMcpConfig.Sync(port, mcpLog));
+            (port, mcpLog) => CursorMcpConfig.Sync(port, mcpLog))
+        {
+            // 端口变化告知总线（宿主 6.0.0 统一契约的模块事件）：要找 MCP 地址的模块订阅它，或执行 portunus.mcp.status。
+            Announce = (running, port) => context.Publish(
+                "portunus.mcp.changed",
+                new { running, port, url = running ? CursorMcpConfig.UrlFor(port) : null }),
+        };
 
         _mcp = gateway;
 
         context.RegisterCommands(registry => McpCommands.RegisterAll(
             registry,
             () => context.Bus,
+            catalog,
             () => gateway,
             settings,
-            prompts,
-            source: "module:HistoryPortunus"));
+            prompts));
 
         if (!listen)
         {
@@ -211,7 +224,7 @@ public sealed class PortunusComposition : IModuleContextAware, IDisposable
     /// 会让远端危险指令**开始**能被人工放行，那是安全语义的变更，不该混在一次搬家里。
     /// 要不要接通，单独议。
     /// </remarks>
-    private static Func<string, string, int, bool?> RefuseRemoteConfirmation(IShellLog log)
+    private static Func<string, string, int, bool?> RefuseRemoteConfirmation(IModuleLog log)
         => (client, prompt, _) =>
         {
             log.Warn("confirm", $"远端确认请求已拒绝(来源 {client}): {prompt}");

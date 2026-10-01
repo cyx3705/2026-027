@@ -1,10 +1,8 @@
 ﻿using System.Net;
 using System.Security.Cryptography;
 using System.Text.Json;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 
 namespace HistoryPortunus.Web;
@@ -35,24 +33,30 @@ internal sealed partial class WebGateway : IDisposable
         ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles,
     };
 
-    private readonly Func<CommandBus?> _busAccessor;
+    private readonly Func<ICommandBus?> _busAccessor;
+    private readonly ICommandCatalog _catalog;
+    private readonly HostIdentity _identity;
     private readonly ISettingsService _settings;
-    private readonly IShellLog _log;
+    private readonly IModuleLog _log;
     private readonly object _lifecycleLock = new();
 
     private HttpListener? _listener;
     private CancellationTokenSource? _cts;
 
-    public WebGateway(Func<CommandBus?> busAccessor, ISettingsService settings, IShellLog log)
+    public WebGateway(
+        Func<ICommandBus?> busAccessor, ICommandCatalog catalog, HostIdentity identity, ISettingsService settings, IModuleLog log)
     {
         _busAccessor = busAccessor;
+        _catalog = catalog;
+        _identity = identity;
+        ServerId = identity.Name;
         _settings = settings;
         _log = log;
     }
 
     public bool IsRunning => _listener is { IsListening: true };
 
-    public string ServerId { get; set; } = AppIdentity.Current.Name;
+    public string ServerId { get; set; }
 
     public int Port { get; private set; }
 
@@ -70,7 +74,7 @@ internal sealed partial class WebGateway : IDisposable
     /// 包括 MCP 侧硬排除的 `vulcan.app.quit`、`vulcan.module.install/remove` 和全部
     /// `vulcan.mcp.*`。也就是说 MCP 的策略、隐藏与危险确认在同机范围内可被整体绕过。
     /// 令牌把"我们自己启动的前端"和"任意本机进程"区分开：它只写进
-    /// `%AppData%\HistoryVulcan\service\endpoint.json`，随进程生存，不落设置、不可配置、不回显。
+    /// 本模块数据目录下的 `endpoint.json`（`%AppData%\HistoryVulcan\ModuleData\HistoryPortunus\`），随进程生存，不落设置、不可配置、不回显。
     /// </summary>
     public string AccessToken { get; private set; } = "";
 
@@ -207,7 +211,7 @@ internal sealed partial class WebGateway : IDisposable
                     port = Port,
                     bind = LoopbackAddress,
                     serverId = ServerId,
-                    productVersion = AppIdentity.Current.Version,
+                    productVersion = _identity.Version,
                     historyVulcanProtocolVersion = GatewayProtocolVersion,
                     minClientVersion = GatewayProtocolVersion,
                     capabilities = new[] { "session-affine-ui", "single-exe" },
@@ -225,16 +229,16 @@ internal sealed partial class WebGateway : IDisposable
                     return;
                 }
 
-                var schemas = new CommandSchemaExporter(bus.Registry).ExportTools()
+                var schemas = new CommandSchemaExporter(_catalog).ExportTools()
                     .ToDictionary(tool => tool.CommandName, StringComparer.OrdinalIgnoreCase);
-                var commands = bus.Registry.All().Select(descriptor => new
+                var commands = _catalog.All().Select(descriptor => new
                 {
                     descriptor.Name,
                     descriptor.Summary,
                     descriptor.Example,
-                    source = bus.Registry.GetSource(descriptor.Name),
+                    source = descriptor.Source,
                     descriptor.Readonly,
-                    dangerous = descriptor.Level == CommandLevel.Ask,
+                    dangerous = descriptor.Ask,
                     // executionSite 随 ExecutionSite 字段一并去掉：它恒为 "Local"，
                     // 全仓没有任何消费方读它，序列化出去只是让接口多一个永不变化的常量。
                     mcpState = McpExposurePolicy.State(descriptor),

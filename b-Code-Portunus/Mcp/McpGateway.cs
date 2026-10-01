@@ -5,9 +5,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using HistoryVulcan.Core.Commands;
-using HistoryVulcan.Core;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 
 using HistoryPortunus.Web;
 
@@ -15,8 +13,8 @@ namespace HistoryPortunus.Mcp;
 
 /// <summary>
 /// MCP 网关(V2.1 §4/§6):HttpListener + JSON-RPC 2.0(Streamable HTTP 无状态子集),
-/// 仅监听 127.0.0.1。铁律 1:唯一上游是指令总线——本类只认识
-/// CommandSchemaExporter / CommandBus,不 import ModuleHost、不反射模块类型。
+/// 仅监听 127.0.0.1。铁律 1:唯一上游是指令总线——本类只认识宿主的窄总线 ICommandBus
+/// 与经总线读来的指令目录(1.1.0,宿主 6.0.0 统一契约),不碰宿主注册表、不反射模块类型。
 /// 消费方显式装配网关后可调用 TryAutostart；mcp.autostart=false 可关闭自动监听，vulcan.mcp.start 仍可手动恢复。
 /// 每次调用/拒绝均追加写入 state/mcp-history.jsonl(铁律 2 / MS-05)。
 /// </summary>
@@ -31,18 +29,19 @@ public sealed partial class McpGateway : IDisposable
     private const int MaxClientNameLength = 100;
     private const int MaxProtocolVersionLength = 64;
     private const int MaxToolNameLength = 64;
-    private readonly Func<CommandBus?> _busAccessor;
+    private readonly Func<ICommandBus?> _busAccessor;
+    private readonly ICommandCatalog _catalog;
     private readonly ISettingsService _settings;
-    private readonly IShellLog _log;
+    private readonly IModuleLog _log;
     private readonly IMcpAuditLog _history;
     private readonly PromptGovernanceStore _prompts;
-    private readonly ApplicationIdentity _identity;
+    private readonly HostIdentity _identity;
 
     /// <summary>宿主确认中继对话框(client, 完整提示, 超时秒) → true/false/null;host 档需要。</summary>
     private readonly Func<string, string, int, bool?>? _remoteConfirm;
 
     /// <summary>监听成功后把 Cursor 用户级 mcp.json 对齐到本端口；测试不传入。</summary>
-    private readonly Action<int, IShellLog>? _announceCursor;
+    private readonly Action<int, IModuleLog>? _announceCursor;
 
     /// <summary>CX-02 §9-4:同一时刻只弹一个中继确认框,多个远程请求按序处理。</summary>
     private readonly SemaphoreSlim _confirmGate = new(1, 1);
@@ -66,12 +65,13 @@ public sealed partial class McpGateway : IDisposable
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
     public McpGateway(
-        Func<CommandBus?> busAccessor, ISettingsService settings, IShellLog log, IMcpAuditLog history,
-        PromptGovernanceStore prompts, ApplicationIdentity identity,
+        Func<ICommandBus?> busAccessor, ICommandCatalog catalog, ISettingsService settings, IModuleLog log,
+        IMcpAuditLog history, PromptGovernanceStore prompts, HostIdentity identity,
         Func<string, string, int, bool?>? remoteConfirm = null,
-        Action<int, IShellLog>? announceCursor = null)
+        Action<int, IModuleLog>? announceCursor = null)
     {
         _busAccessor = busAccessor;
+        _catalog = catalog;
         _settings = settings;
         _log = log;
         _history = history;
@@ -80,6 +80,9 @@ public sealed partial class McpGateway : IDisposable
         _remoteConfirm = remoteConfirm;
         _announceCursor = announceCursor;
     }
+
+    /// <summary>监听开关变化后告知外界(是否在听, 端口);装配方用它发总线事件。</summary>
+    public Action<bool, int>? Announce { get; init; }
 
     /// <summary>确认中继模式(CX-02):deny=危险指令一律拒绝(默认);host=宿主弹框人工裁决。</summary>
     public string ConfirmMode
@@ -143,24 +146,21 @@ public sealed partial class McpGateway : IDisposable
             return Array.Empty<McpToolInfo>();
         var policy = Policy;
         var relayOn = ConfirmMode == "host" && policy == "standard";
-        var registry = _busAccessor()?.Registry;
-        if (registry == null)
-            return Array.Empty<McpToolInfo>();
 
         return exporter.ExportTools()
-            .Where(t => IsToolCallable(t, registry, policy, relayOn))
+            .Where(t => IsToolCallable(t, _catalog, policy, relayOn))
             .ToList();
     }
 
     private static bool IsToolCallable(
         McpToolInfo tool,
-        CommandRegistry registry,
+        ICommandCatalog catalog,
         string policy,
         bool relayOn)
     {
-        if (!registry.TryGet(tool.CommandName, out var descriptor))
+        if (!catalog.TryGet(tool.CommandName, out var descriptor))
             return false;
-        if (descriptor.Level == CommandLevel.Ask)
+        if (descriptor.Ask)
             return relayOn && McpExposurePolicy.HardExclusionReason(descriptor) == null;
         return McpExposurePolicy.IsVisible(descriptor, policy);
     }
@@ -169,10 +169,9 @@ public sealed partial class McpGateway : IDisposable
     {
         if (_exporter != null)
             return _exporter;
-        var bus = _busAccessor();
-        if (bus == null)
+        if (_busAccessor() == null)
             return null;
-        return _exporter = new CommandSchemaExporter(bus.Registry)
+        return _exporter = new CommandSchemaExporter(_catalog)
         {
             DescriptionsProvider = _prompts.AllEffectiveDescriptions,
         };
@@ -230,6 +229,7 @@ public sealed partial class McpGateway : IDisposable
             _cts = new CancellationTokenSource();
             _ = AcceptLoopAsync(_listener, _cts.Token);
             _announceCursor?.Invoke(Port, _log);
+            Announce?.Invoke(true, Port);
             _log.Info("mcp", $"MCP 服务已启动: http://127.0.0.1:{Port}/mcp(策略 {Policy})");
             return (true, $"MCP 服务已启动: http://127.0.0.1:{Port}/mcp\n策略 {Policy},当前暴露 {VisibleTools().Count} 个工具");
         }
@@ -252,6 +252,7 @@ public sealed partial class McpGateway : IDisposable
             _cts = null;
             _sessions.Clear();
             Port = 0;
+            Announce?.Invoke(false, releasedPort);
             _log.Info("mcp", "MCP 服务已停止");
             return (true, $"MCP 服务已停止(端口 {releasedPort} 已释放)");
         }
@@ -525,7 +526,7 @@ public sealed partial class McpGateway : IDisposable
 
             var policy = Policy;
             var relayOn = ConfirmMode == "host" && policy == "standard";
-            if (!IsToolCallable(tool, bus.Registry, policy, relayOn))
+            if (!IsToolCallable(tool, _catalog, policy, relayOn))
             {
                 Audit(tool.ToolName, argsText, "拒绝");
                 _log.Warn("mcp", $"拒绝调用(工具未对 MCP 开放): {tool.ToolName}");
@@ -557,7 +558,7 @@ public sealed partial class McpGateway : IDisposable
                         isError: true));
                 }
 
-                var decision = await RelayConfirmAsync(session, bus, tool.CommandName, arguments, commandText)
+                var decision = await RelayConfirmAsync(session, tool.CommandName, arguments, commandText)
                     .ConfigureAwait(false);
                 if (decision == RelayConfirmDecision.Rejected)
                 {
@@ -589,7 +590,7 @@ public sealed partial class McpGateway : IDisposable
 
             // §6.2:readonly 档优先读取命令自描述；名称白名单仅为迁移兼容层。
             if (Policy == "readonly"
-                && (!bus.Registry.TryGet(tool.CommandName, out var descriptor)
+                && (!_catalog.TryGet(tool.CommandName, out var descriptor)
                     || (!descriptor.Readonly && !McpExposurePolicy.IsReadonlyAllowed(tool.CommandName))))
             {
                 Audit(tool.ToolName, argsText, "拒绝");
@@ -722,7 +723,7 @@ public sealed partial class McpGateway : IDisposable
 
     /// <summary>组装指令经总线执行并映射为 MCP 结果;preApproved=true 时置确认预批准域(CX-03)。</summary>
     private async Task<JsonObject> ExecuteToolAsync(
-        ClientSession session, JsonNode? id, CommandBus bus, McpToolInfo tool, string commandText, string argsText,
+        ClientSession session, JsonNode? id, ICommandBus bus, McpToolInfo tool, string commandText, string argsText,
         bool preApproved, string? relayNote, Action<string, string, string> audit)
     {
         var timeoutSeconds = int.TryParse(
@@ -794,19 +795,17 @@ public sealed partial class McpGateway : IDisposable
     }
 
     /// <summary>
-    /// 宿主确认中继(CX-02):复用描述符 ConfirmPrompt 文案,标注 MCP 客户端弹框由人裁决。
-    /// 返回批准、拒绝、确认超时或排队超时。ConfirmPrompt 对本次输入返回 null
-    /// (如受保护分支)时直接放行,交由指令处理器按业务规则拒绝。
+    /// 宿主确认中继(CX-02):标注 MCP 客户端弹框由人裁决。返回批准、拒绝、确认超时或排队超时。
+    /// 1.1.0 起文案不再复用描述符的 ConfirmPrompt(那是宿主注册表里的委托,6.0.0 起模块看不到),
+    /// 改为指令名加参数;按参数定制的文案仍由宿主总线在真正执行时的确认闸口给出。
     /// </summary>
     private async Task<RelayConfirmDecision> RelayConfirmAsync(
-        ClientSession session, CommandBus bus, string commandName, JsonElement? arguments, string commandText)
+        ClientSession session, string commandName, JsonElement? arguments, string commandText)
     {
         if (_remoteConfirm == null)
             return RelayConfirmDecision.Rejected; // 无对话通道 → 安全缺省拒绝
 
-        var prompt = BuildConfirmPrompt(session, bus, commandName, arguments);
-        if (prompt == null)
-            return RelayConfirmDecision.Approved; // 本次输入无需人工确认(处理器自行判定)
+        var prompt = BuildConfirmPrompt(commandName, arguments);
 
         var full = $"【MCP 客户端 “{session.Name}” 的远程请求】\n\n{prompt}\n\n等价指令: {commandText}";
         var timeoutSeconds = ConfirmTimeout;

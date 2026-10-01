@@ -13,11 +13,11 @@ public sealed class McpAuditRecorder : IMcpAuditLog
     private const int MaxResultLength = 100;
 
     private readonly string _path;
-    private readonly IShellLog _log;
+    private readonly IModuleLog _log;
     private readonly object _gate = new();
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
-    public McpAuditRecorder(string dataDirectory, IShellLog log)
+    public McpAuditRecorder(string dataDirectory, IModuleLog log)
     {
         _path = Path.Combine(dataDirectory, "state", "mcp-history.jsonl");
         _log = log;

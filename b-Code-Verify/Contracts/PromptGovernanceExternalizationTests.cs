@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using HistoryVulcan.Core.Commands;
 using HistoryVulcan.Core.Logging;
-using HistoryVulcan.Core.Storage;
 using HistoryPortunus.Mcp;
 using Xunit;
 
@@ -86,7 +85,7 @@ public sealed class PromptGovernanceExternalizationTests
         var root = TemporaryDirectory();
         try
         {
-            var registry = new CommandRegistry();
+            var registry = new TestRegistrar();
             registry.Register(new CommandDescriptor
             {
                 Name = "sample.run",
@@ -137,7 +136,7 @@ public sealed class PromptGovernanceExternalizationTests
         var root = TemporaryDirectory();
         try
         {
-            var registry = new CommandRegistry();
+            var registry = new TestRegistrar();
             var settings = new MemorySettings();
             var store = new PromptGovernanceStore(root, new NullLog());
             RegisterUnaffectedHostTools(registry);
@@ -145,12 +144,12 @@ public sealed class PromptGovernanceExternalizationTests
             McpCommands.RegisterAll(
                 registry,
                 () => null,
+                new TestCatalog(registry),
                 () => null,
                 settings,
-                store,
-                "test");
+                store);
 
-            var exporter = new CommandSchemaExporter(registry)
+            var exporter = new CommandSchemaExporter(new TestCatalog(registry))
             {
                 DescriptionsProvider = store.AllEffectiveDescriptions,
             };
@@ -193,7 +192,7 @@ public sealed class PromptGovernanceExternalizationTests
     private static IEnumerable<string> UnaffectedHostToolNames()
         => Enumerable.Range(1, 12).Select(index => $"vulcan.fixture{index:00}");
 
-    private static void RegisterUnaffectedHostTools(CommandRegistry registry)
+    private static void RegisterUnaffectedHostTools(TestRegistrar registry)
     {
         for (var index = 1; index <= 12; index++)
         {
@@ -208,7 +207,7 @@ public sealed class PromptGovernanceExternalizationTests
         }
     }
 
-    private static void RegisterLegacyPromptTools(CommandRegistry registry)
+    private static void RegisterLegacyPromptTools(TestRegistrar registry)
     {
         foreach (var command in RemovedPromptCommands)
         {
@@ -223,10 +222,10 @@ public sealed class PromptGovernanceExternalizationTests
     }
 
     private static Dictionary<string, string> ExportDescriptions(
-        CommandRegistry registry,
+        TestRegistrar registry,
         IEffectivePromptDescriptionReader reader)
     {
-        var exporter = new CommandSchemaExporter(registry)
+        var exporter = new CommandSchemaExporter(new TestCatalog(registry))
         {
             DescriptionsProvider = reader.AllEffectiveDescriptions,
         };
@@ -261,7 +260,7 @@ public sealed class PromptGovernanceExternalizationTests
         public IReadOnlyList<KeyValuePair<string, string>> All() => _values.ToList();
     }
 
-    private sealed class NullLog : IShellLog
+    private sealed class NullLog : IModuleLog
     {
         public void Log(ShellLogLevel level, string category, string message) { }
 
