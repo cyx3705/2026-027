@@ -15,7 +15,7 @@ namespace HistoryPortunus.Mcp;
 /// MCP 网关(V2.1 §4/§6):HttpListener + JSON-RPC 2.0(Streamable HTTP 无状态子集),
 /// 仅监听 127.0.0.1。铁律 1:唯一上游是指令总线——本类只认识宿主的窄总线 ICommandBus
 /// 与经总线读来的指令目录(1.1.0,宿主 6.0.0 统一契约),不碰宿主注册表、不反射模块类型。
-/// 消费方显式装配网关后可调用 TryAutostart；mcp.autostart=false 可关闭自动监听，vulcan.mcp.start 仍可手动恢复。
+/// 消费方显式装配网关后可调用 TryAutostart；mcp.autostart=false 可关闭自动监听，portunus.mcp.start 仍可手动恢复。
 /// 每次调用/拒绝均追加写入 state/mcp-history.jsonl(铁律 2 / MS-05)。
 /// </summary>
 public sealed partial class McpGateway : IDisposable
@@ -106,7 +106,7 @@ public sealed partial class McpGateway : IDisposable
     /// <summary>
     /// 是否随宿主启动自动监听。**缺省为 false**：网关会对外开一个回环端口，
     /// 开不开必须由人显式决定，不能因为装配了就默默监听。
-    /// 用 <c>vulcan.mcp.autostart enabled=true</c> 打开持久自启动。
+    /// 用 <c>portunus.mcp.autostart enabled=true</c> 打开持久自启动。
     /// </summary>
     public bool AutostartEnabled
         => bool.TryParse(_settings.Get(McpSettingKeys.Autostart), out var enabled) && enabled;
@@ -195,7 +195,7 @@ public sealed partial class McpGateway : IDisposable
         lock (_lifecycleLock)
         {
             if (IsRunning)
-                return (false, $"MCP 服务已在运行(端口 {Port}),先 vulcan.mcp.stop");
+                return (false, $"MCP 服务已在运行(端口 {Port}),先 portunus.mcp.stop");
 
             var configured = int.TryParse(
                 _settings.Get(McpSettingKeys.Port), System.Globalization.NumberStyles.Integer,
@@ -531,7 +531,7 @@ public sealed partial class McpGateway : IDisposable
                 Audit(tool.ToolName, argsText, "拒绝");
                 _log.Warn("mcp", $"拒绝调用(工具未对 MCP 开放): {tool.ToolName}");
                 return RpcResult(id, ToolText(
-                    $"已拒绝: {tool.CommandName} 未在当前 MCP 策略下开放执行。",
+                    $"已拒绝: {tool.CommandName} 未在当前 MCP 策略下开放执行。{PolicyHint(tool.CommandName, policy)}",
                     isError: true));
             }
 
@@ -546,7 +546,7 @@ public sealed partial class McpGateway : IDisposable
                     _log.Warn("mcp", $"拒绝危险工具调用: {tool.ToolName}(mcp.confirm=deny)");
                     return RpcResult(id, ToolText(
                         $"已拒绝: {tool.CommandName} 是需二次确认的危险指令。当前 mcp.confirm=deny;" +
-                        "宿主执行 vulcan.app.set key=mcp.confirm value=host 后,远程请求将弹框由人工裁决。",
+                        "宿主执行 portunus.mcp.config key=confirm value=host 后,远程请求将弹框由人工裁决。",
                         isError: true));
                 }
 
@@ -554,7 +554,7 @@ public sealed partial class McpGateway : IDisposable
                 {
                     Audit(tool.ToolName, argsText, "拒绝");
                     return RpcResult(id, ToolText(
-                        $"已拒绝: 当前策略为 readonly,不受理危险指令;宿主切 standard 后方可经中继确认执行。",
+                        $"已拒绝: 当前策略为 readonly,不受理危险指令;宿主执行 portunus.mcp.config key=policy value=standard 后方可经中继确认执行。",
                         isError: true));
                 }
 
@@ -596,7 +596,7 @@ public sealed partial class McpGateway : IDisposable
                 Audit(tool.ToolName, argsText, "拒绝");
                 _log.Warn("mcp", $"拒绝调用(策略 readonly 未暴露): {tool.ToolName}");
                 return RpcResult(id, ToolText(
-                    $"已拒绝: 当前暴露策略为 readonly,{tool.CommandName} 未开放;宿主执行 vulcan.app.set key=mcp.policy value=standard 可放开动作类指令",
+                    $"已拒绝: 当前暴露策略为 readonly,{tool.CommandName} 未开放;宿主执行 portunus.mcp.config key=policy value=standard 可放开动作类指令",
                     isError: true));
             }
 
@@ -612,6 +612,24 @@ public sealed partial class McpGateway : IDisposable
         }
     }
 
+    /// <summary>
+    /// 被 readonly 策略挡下时告诉人哪个开关能放开（1.1.1，DEC-PORT-006）。
+    /// </summary>
+    /// <remarks>
+    /// 硬排除与模块隐藏不是 portunus.mcp.config 能改的，不给提示。
+    /// 危险指令也不提示 confirm=host：远端确认通道目前一律拒绝（见 PortunusComposition.RefuseRemoteConfirmation），
+    /// 开了 host 只是换一种拒绝，提示了反而误导。
+    /// </remarks>
+    private string PolicyHint(string commandName, string policy)
+    {
+        if (policy != "readonly"
+            || !_catalog.TryGet(commandName, out var descriptor)
+            || descriptor.Ask
+            || McpExposurePolicy.HardExclusionReason(descriptor) != null)
+            return "";
+        return "当前策略为 readonly;宿主执行 portunus.mcp.config key=policy value=standard 可放开动作类指令。";
+    }
+
     private static string RedactAuditArguments(string commandName, JsonElement? arguments)
     {
         try
@@ -623,14 +641,11 @@ public sealed partial class McpGateway : IDisposable
 
             var node = JsonNode.Parse(arguments.Value.GetRawText());
 
-            var tokenCommand = commandName.Equals("vulcan.web.token", StringComparison.OrdinalIgnoreCase)
-                               || commandName.Equals("vulcan.mcp.token", StringComparison.OrdinalIgnoreCase);
             var settingCommand = commandName.Equals("vulcan.app.set", StringComparison.OrdinalIgnoreCase);
             string? settingKey = null;
             var hasUniqueSettingKey = settingCommand
                                       && TryGetUniqueStringProperty(arguments.Value, "key", out settingKey);
-            var redactRootValues = tokenCommand
-                                   || settingCommand
+            var redactRootValues = settingCommand
                                    && (!hasUniqueSettingKey || IsSensitiveSettingKey(settingKey!));
             RedactNode(node, redactRootValues, preserveRootKey: settingCommand && hasUniqueSettingKey);
             return node?.ToJsonString() ?? "null";

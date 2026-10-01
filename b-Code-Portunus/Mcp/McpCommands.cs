@@ -31,6 +31,7 @@ public static class McpCommands
         registry.Register(BuildStop(gateway));
         registry.Register(BuildStatus(gateway));
         registry.Register(BuildAutostart(gateway, settings));
+        registry.Register(BuildConfig(gateway, settings));
 
         // vulcan.command.list / show / domains / manual 不在这里注册：
         // 它们是宿主的指令自省面，随宿主装配，不随本模块来去。
@@ -102,12 +103,12 @@ public static class McpCommands
 
             var sb = new StringBuilder();
             sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
-            sb.Append($"\n  策略   : {g.Policy}(缺省 standard;vulcan.app.set key=mcp.policy value=readonly 可收窄)");
+            sb.Append($"\n  策略   : {g.Policy}(缺省 standard;portunus.mcp.config key=policy value=readonly 可收窄)");
             sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
             sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
             sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
             sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
-                      $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;host 档开启中继确认)")}");
+                      $"{(g.ConfirmMode == "host" ? $"(远程请求宿主弹框确认,{g.ConfirmTimeout}s 超时拒绝)" : "(一律拒绝;portunus.mcp.config key=confirm value=host 开启中继确认)")}");
             sb.Append($"\n  调用   : 累计 {g.CallCount} 次,最近 {g.LastCall}");
             // 1.1.0:Data 给出地址,供要找 MCP 的模块经总线读取(HistoryDiana 的中继不再读 Cursor 配置或 endpoint.json)。
             return CommandResult.Ok(sb.ToString(), new
@@ -163,6 +164,89 @@ public static class McpCommands
                         : "已关闭 MCP 自动监听；本次若在运行用 portunus.mcp.stop 释放端口。");
             }),
         };
+
+    /// <summary>
+    /// 本模块自持的 MCP 策略开关（mcp.policy / mcp.confirm）的唯一写口。
+    /// </summary>
+    /// <remarks>
+    /// 1.1.1 起：这两个键只存在于 Portunus 自己的设置库（数据目录 <c>state\portunus-settings.json</c>），
+    /// 宿主的 <c>vulcan.app.set</c> 写的是宿主 <c>service\settings.json</c>，网关从不读那里——
+    /// 此前提示语指向它，照做也不生效（DEC-PORT-006）。
+    /// 两个键都在放宽或收窄远端能做什么，因此级别是「询问」；只查看时不问。
+    /// </remarks>
+    private static CommandDescriptor BuildConfig(
+        Func<McpGateway?> gateway, ISettingsService settings) => new()
+        {
+            Name = "portunus.mcp.config",
+            HiddenReason = "防止远程递归管理或关闭 MCP 服务",
+            Domain = "portunus",
+            CommandClass = "mcp",
+            Summary = "查看或设置 MCP 暴露策略与危险指令处置(持久;省略 value 只查看)",
+            Example = "portunus.mcp.config key=policy value=readonly",
+            Level = CommandLevel.Ask,
+            ConfirmPrompt = ctx => ctx.Has("value")
+                ? $"确认把 MCP 设置 {ConfigKey(ctx.GetString("key"))} 改为 {ctx.GetString("value")}？这会改变远端客户端能调用哪些指令。"
+                : null,
+            Parameters =
+            [
+                new ParameterSpec
+                {
+                    Name = "key",
+                    Description = "policy 暴露策略(standard/readonly);confirm 危险指令处置(deny 不暴露、一律拒绝/host 暴露并交宿主确认通道裁决)。省略则列出两项当前值。",
+                    AllowedValues = ["policy", "confirm"],
+                    Position = 0,
+                },
+                new ParameterSpec
+                {
+                    Name = "value",
+                    Description = "新值;省略则只报告当前值",
+                    Position = 1,
+                },
+            ],
+            Handler = CommandDescriptor.Sync(ctx =>
+            {
+                var g = gateway();
+                if (g == null)
+                    return CommandResult.Fail("网关未装配");
+
+                var key = ctx.GetString("key")?.Trim();
+                if (string.IsNullOrEmpty(key))
+                {
+                    if (ctx.Has("value"))
+                        return CommandResult.Fail("缺少 key(policy / confirm)");
+                    return CommandResult.Ok(
+                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}",
+                        new { policy = g.Policy, confirm = g.ConfirmMode });
+                }
+
+                var settingKey = ConfigKey(key);
+                var allowed = ConfigValues(settingKey);
+                if (!ctx.Has("value"))
+                {
+                    var current = settingKey == McpSettingKeys.Policy ? g.Policy : g.ConfirmMode;
+                    return CommandResult.Ok($"{settingKey} = {current}(可选 {string.Join("/", allowed)})");
+                }
+
+                var value = ctx.GetString("value")?.Trim().ToLowerInvariant() ?? "";
+                if (!allowed.Contains(value))
+                    return CommandResult.Fail($"{settingKey} 取值应为 {string.Join("/", allowed)},实际: {value}");
+
+                settings.Set(settingKey, value);
+                // 网关每次请求现读设置,写完即生效,不需要重启监听。
+                return CommandResult.Ok(
+                    $"已设置 {settingKey} = {value}(立即生效,当前暴露 {g.VisibleTools().Count} 个工具)",
+                    new { key = settingKey, value });
+            }),
+        };
+
+    /// <summary>短名 policy / confirm 映射到设置键（取值范围由总线按 AllowedValues 先挡）。</summary>
+    private static string ConfigKey(string? key)
+        => string.Equals(key?.Trim(), "confirm", StringComparison.OrdinalIgnoreCase)
+            ? McpSettingKeys.Confirm
+            : McpSettingKeys.Policy;
+
+    private static string[] ConfigValues(string settingKey)
+        => settingKey == McpSettingKeys.Confirm ? ["deny", "host"] : ["standard", "readonly"];
 
     // ---------------------------------------------------------------- portunus.mcp.schema(MC-05)
 
