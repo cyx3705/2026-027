@@ -7,16 +7,17 @@
 1. 读取根目录 `project.manifest.json`，确认项目身份、状态、活动目录和可用命令。
 2. 读取根目录 `README.md` 和 `b-Office/current/项目概览.md`。
 3. 根据任务读取 `b-Office/current/技术合同.md`、`有效决策.md` 或 `验证合同.md`；涉及目录治理时
-   读取 `b-Office/文档中心.md` 的“目录规范”，涉及跨项目复用时再读取 `b-Office/package/模块API.md`。
+   读取 `b-Office/文档中心.md` 的“目录规范”。
 4. 只进入 manifest 声明的活动目录。发现未登记目录时，先确认其级别、所有者和用途。
-5. 跨项目说明书：先执行 `diana.docs.catalog`，把完整输出留在本对话中，再调用其中一条
-   `diana.docs.<通道>`。不要打开别的 worktree 的 package，也不要依赖手写文件表。
+5. 查任何模块（含本模块）的指令怎么调用：先执行 `diana.docs.catalog`，把完整输出留在本对话中，再
+   `diana.docs.read domain=<域>`。说明书就是注册时的自描述（宿主 6.1.0 起没有消费文档）；
+   不要打开别的 worktree，也不要依赖手写文件表。
 
 ## 宿主契约
 
 - 本项目是**独立应用** `HistoryAurora.exe`（DEC-004），同时在 Vulcan 的模块注册表里登记
   一条平级条目（DEC-007）。它不是宿主：宿主之所以是宿主，只因为它持有指令总线与注册表。
-- 宿主合同以 `../2026-023-HistoryVulcan/b-Office/package/` 为准，不在本仓复述。
+- 宿主合同以 `../2026-023-HistoryVulcan/b-Office/current/模块开发手册.md` 为准，不在本仓复述。
 - 消费的宿主版本由 `b-Code-Studio/AuroraVersion.props` 的 `MinimumHistoryVulcanVersion`
   单点声明，发布脚本与门禁都从此读取，不得各自硬编码字面量。
 - 模块引用宿主运行库一律 `Private=false`（部署时由宿主提供）；测试工程是独立宿主进程，

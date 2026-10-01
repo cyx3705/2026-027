@@ -7,7 +7,7 @@ namespace HistoryPortunus.Contracts;
 
 /// <summary>
 /// 1.1.0：网关的目录经总线读宿主（<c>vulcan.command.revision</c> + <c>vulcan.command.list</c>），
-/// 按宿主模块API写明的 JSON 字段名解析，版本号不变不重拉。
+/// 按宿主模块开发手册写明的 JSON 字段名解析，版本号不变不重拉。
 /// </summary>
 public sealed class BusCommandCatalogTests
 {

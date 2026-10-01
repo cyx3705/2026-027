@@ -17,7 +17,7 @@ public sealed record CatalogParameter(
 /// 目录里的一条指令：网关投影 MCP 工具、判定可见性所需的全部事实。
 /// </summary>
 /// <remarks>
-/// 1.1.0 起按宿主 6.0.0 统一契约从 <c>vulcan.command.list</c> 的 JSON 读出（字段名以宿主模块API为准），
+/// 1.1.0 起按宿主 6.0.0 统一契约从 <c>vulcan.command.list</c> 的 JSON 读出（字段名以宿主模块开发手册「宿主指令的 Data」为准），
 /// 不再持有宿主注册表里的 <c>CommandDescriptor</c>。宿主内部类怎么改都不影响这里。
 /// </remarks>
 public sealed record CatalogCommand(

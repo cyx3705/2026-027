@@ -22,8 +22,7 @@
     "activeRoots": [
       "b-Code-Portunus",
       "b-Code-Verify",
-      "b-Office/current",
-      "b-Office/package"
+      "b-Office/current"
     ],
     "sourceRoots": [
       "b-Code-Portunus",

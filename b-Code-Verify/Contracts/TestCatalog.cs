@@ -8,7 +8,7 @@ namespace HistoryPortunus.Contracts;
 /// </summary>
 /// <remarks>
 /// 生产里网关经总线执行 <c>vulcan.command.list</c> 取目录（<see cref="BusCommandCatalog"/>）；测试进程里没有宿主，
-/// 这里按宿主模块API写明的字段语义直接投影，来源默认 <c>framework</c>，按名覆盖。
+/// 这里按宿主模块开发手册写明的字段语义直接投影，来源默认 <c>framework</c>，按名覆盖。
 /// </remarks>
 internal sealed class TestCatalog(Func<TestRegistrar?> registrar) : ICommandCatalog
 {
