@@ -15,7 +15,7 @@
       "transport-module"
     ],
     "status": "active",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "branch": "main"
   },
   "paths": {
@@ -36,7 +36,6 @@
       "z-Publish"
     ],
     "archiveRoots": [
-      "b-Office/history",
       "z-Publish/history"
     ],
     "releaseRoots": [
@@ -49,12 +48,7 @@
     ]
   },
   "documents": {
-    "center": "b-Office/文档中心.md",
-    "structure": "b-Office/文档中心.md",
-    "overview": "b-Office/current/项目概览.md",
-    "technicalContract": "b-Office/current/技术合同.md",
-    "decisions": "b-Office/current/有效决策.md",
-    "verification": "b-Office/current/验证合同.md"
+    "conventions": "b-Office/current/现行约定.md"
   },
   "commands": {
     "setup": "dotnet restore .\\HistoryPortunus.sln --locked-mode -p:NuGetAudit=false",
@@ -65,11 +59,10 @@
     "package": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\b-Code-Portunus\\eng\\Build-HistoryPortunusPackage.ps1"
   },
   "externalDependencies": [
-    "HistoryVulcan >= 5.1.0 published host snapshot",
+    "HistoryVulcan >= 6.0.0 published host snapshot",
     ".NET 8 SDK"
   ],
   "contextExclusions": [
-    "b-Office/history/**",
     "z-Publish/**",
     "**/bin/**",
     "**/obj/**",

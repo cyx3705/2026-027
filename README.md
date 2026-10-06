@@ -33,7 +33,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | `portunus.mcp.schema` | 查看指令投影成的 MCP 工具形态 |
 | `portunus.mcp.parse` | 调试：把 JSON `arguments` 反向组装成指令文本 |
 
-模块作者关心的「你的指令怎么变成 MCP 工具」见 [技术合同](./b-Office/current/技术合同.md) REQ-PORT-006；`portunus.*` 各条的参数读注册自描述：`diana.docs.read domain=portunus`（宿主 6.1.0 起没有消费文档）。
+模块作者关心的「你的指令怎么变成 MCP 工具」见 [现行约定](./b-Office/current/现行约定.md)；`portunus.*` 各条的参数读注册自描述：`diana.docs.read domain=portunus`（宿主 6.1.0 起没有消费文档）。
 
 ## 入口
 
@@ -41,11 +41,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | --- | --- |
 | [`AGENTS.md`](./AGENTS.md) | AI 工作合同：读取顺序、真值判定、边界 |
 | [`project.manifest.json`](./project.manifest.json) | 项目身份、活动目录、文档与命令 |
-| [文档中心](./b-Office/文档中心.md) | 文档索引与读取顺序 |
-| [项目概览](./b-Office/current/项目概览.md) | 目标、范围与状态 |
-| [技术合同](./b-Office/current/技术合同.md) | 现行需求与架构 |
-| [有效决策](./b-Office/current/有效决策.md) | 仍然有效的关键决策 |
-| [验证合同](./b-Office/current/验证合同.md) | 验证层级、命令与证据 |
+| [现行约定](./b-Office/current/现行约定.md) | 唯一的长期文档：真相在哪、取舍、已知缺口、工程约定 |
 
 ## 目录
 
@@ -53,7 +49,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | --- | --- |
 | `b-Code-Portunus/` | 模块源码、manifest 与 `eng/` 构建脚本 |
 | `b-Code-Verify/` | `Contracts` 合同测试 |
-| `b-Office/` | 项目文档：`current/` 现行合同、`history/` 只读归档 |
+| `b-Office/` | `current/现行约定.md`，仅此一份 |
 | `z-Publish/` | 正式快照与 `history/` 归档，由宿主管线写入 |
 
 ## 构建与验证

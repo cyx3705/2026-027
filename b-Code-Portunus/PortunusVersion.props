@@ -1,11 +1,10 @@
 <Project>
   <PropertyGroup>
-    <HistoryPortunusVersion>1.1.1</HistoryPortunusVersion>
+    <HistoryPortunusVersion>1.1.2</HistoryPortunusVersion>
     <!-- Portunus 消费的 HistoryVulcan 正式宿主版本，是宿主契约的唯一真源：
          发布脚本与质量门禁都从此读取，不再各自硬编码字面量。
-         5.1.0 将模块公开面收敛为命令总线与注册器，并移除了旧 MCP/schema/client 类型。
-         Portunus 1.0 已将这些传输专用类型收回自身，同时仍依赖宿主在热重载时 Dispose
-         模块实例以释放 HttpListener。因此低于 5.1.0 的宿主不是受支持的运行基线。 -->
+         6.0.0 起模块只见窄接口，并在热重载时 Dispose 模块实例以释放 HttpListener。
+         低于 6.0.0 的宿主不是受支持的运行基线。 -->
     <MinimumHistoryVulcanVersion>6.0.0</MinimumHistoryVulcanVersion>
     <VersionPrefix>$(HistoryPortunusVersion)</VersionPrefix>
     <Version>$(HistoryPortunusVersion)</Version>
