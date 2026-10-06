@@ -5,7 +5,7 @@
 ## 启动读取顺序
 
 1. 读取根目录 `project.manifest.json`，确认项目身份、状态、活动目录和可用命令。
-2. 读取根目录 `README.md` 和 `b-Office/current/现行约定.md`（本仓唯一的长期文档）。
+2. 读取根目录 `README.md` 和 `b-Office/现行约定.md`（本仓唯一的长期文档）。
 3. 查任何模块（含本模块）的指令怎么调用：先执行 `diana.docs.catalog`，把完整输出留在本对话中，再
    `diana.docs.read domain=<域>`。说明书就是注册时的自描述（宿主 6.1.0 起没有消费文档）；
    不要打开别的 worktree，也不要依赖手写文件表。

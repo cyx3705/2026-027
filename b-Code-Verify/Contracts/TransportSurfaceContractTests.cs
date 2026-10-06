@@ -26,20 +26,19 @@ public sealed class TransportSurfaceContractTests
     {
         var root = RepoRoot();
         var office = Path.Combine(root, "b-Office");
-        var current = Path.Combine(office, "current");
 
-        Assert.True(Directory.Exists(current));
+        Assert.False(Directory.Exists(Path.Combine(office, "current")));
         Assert.False(Directory.Exists(Path.Combine(office, "history")));
         Assert.False(File.Exists(Path.Combine(office, "文档中心.md")));
         Assert.Equal(
             new[] { "现行约定.md" },
-            Directory.EnumerateFiles(current, "*.md").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray());
+            Directory.EnumerateFiles(office, "*.md").Select(Path.GetFileName).Order(StringComparer.Ordinal).ToArray());
 
         using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(root, "project.manifest.json")));
         var documents = manifest.RootElement.GetProperty("documents");
         var keys = documents.EnumerateObject().Select(property => property.Name).ToArray();
         Assert.Equal(new[] { "conventions" }, keys);
-        Assert.Equal("b-Office/current/现行约定.md", documents.GetProperty("conventions").GetString());
+        Assert.Equal("b-Office/现行约定.md", documents.GetProperty("conventions").GetString());
         foreach (var archive in manifest.RootElement.GetProperty("paths").GetProperty("archiveRoots").EnumerateArray())
             Assert.DoesNotContain("b-Office/history", archive.GetString(), StringComparison.Ordinal);
     }

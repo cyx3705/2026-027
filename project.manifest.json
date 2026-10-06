@@ -22,7 +22,7 @@
     "activeRoots": [
       "b-Code-Portunus",
       "b-Code-Verify",
-      "b-Office/current"
+      "b-Office"
     ],
     "sourceRoots": [
       "b-Code-Portunus",
@@ -48,7 +48,7 @@
     ]
   },
   "documents": {
-    "conventions": "b-Office/current/现行约定.md"
+    "conventions": "b-Office/现行约定.md"
   },
   "commands": {
     "setup": "dotnet restore .\\HistoryPortunus.sln --locked-mode -p:NuGetAudit=false",

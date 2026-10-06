@@ -33,7 +33,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | `portunus.mcp.schema` | 查看指令投影成的 MCP 工具形态 |
 | `portunus.mcp.parse` | 调试：把 JSON `arguments` 反向组装成指令文本 |
 
-模块作者关心的「你的指令怎么变成 MCP 工具」见 [现行约定](./b-Office/current/现行约定.md)；`portunus.*` 各条的参数读注册自描述：`diana.docs.read domain=portunus`（宿主 6.1.0 起没有消费文档）。
+模块作者关心的「你的指令怎么变成 MCP 工具」见 [现行约定](./b-Office/现行约定.md)；`portunus.*` 各条的参数读注册自描述：`diana.docs.read domain=portunus`（宿主 6.1.0 起没有消费文档）。
 
 ## 入口
 
@@ -41,7 +41,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | --- | --- |
 | [`AGENTS.md`](./AGENTS.md) | AI 工作合同：读取顺序、真值判定、边界 |
 | [`project.manifest.json`](./project.manifest.json) | 项目身份、活动目录、文档与命令 |
-| [现行约定](./b-Office/current/现行约定.md) | 唯一的长期文档：真相在哪、取舍、已知缺口、工程约定 |
+| [现行约定](./b-Office/现行约定.md) | 唯一的长期文档：真相在哪、取舍、已知缺口、工程约定 |
 
 ## 目录
 
