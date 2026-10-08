@@ -128,6 +128,9 @@ public sealed partial class McpGateway : IDisposable
         }
     }
 
+    /// <summary>tools/list 形态：full / compact(见 McpSettingKeys.ResolveSurface)。</summary>
+    public string Surface => McpSettingKeys.ResolveSurface(_settings);
+
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
     public long CallCount => Interlocked.Read(ref _callCount);
 
@@ -440,6 +443,9 @@ public sealed partial class McpGateway : IDisposable
 
     private JsonObject HandleToolsList(JsonNode? id)
     {
+        if (Surface == "compact")
+            return RpcResult(id, new JsonObject { ["tools"] = CompactTools() });
+
         var tools = new JsonArray();
         foreach (var t in VisibleTools())
         {
@@ -494,6 +500,32 @@ public sealed partial class McpGateway : IDisposable
             }
 
             var toolName = nameEl.GetString()!;
+
+            // 精简形态的两个元工具(两种形态下都受理):find 只读目录;
+            // call 拆出内层工具名与参数后,走下面与直调完全相同的策略、确认与留痕。
+            if (toolName.Equals(FindToolName, StringComparison.Ordinal))
+            {
+                if (GetExporter() == null)
+                {
+                    Audit(FindToolName, auditArguments, "拒绝");
+                    return RpcError(id, -32603, "宿主总线未就绪");
+                }
+                Audit(FindToolName, auditArguments, "成功");
+                return RpcResult(id, HandleFind(arguments));
+            }
+
+            if (toolName.Equals(CallToolName, StringComparison.Ordinal))
+            {
+                if (!TryUnwrapCall(arguments, out var innerName, out var innerArguments))
+                {
+                    Audit(CallToolName, auditArguments, "拒绝");
+                    return RpcError(id, -32602, $"{CallToolName} 需要 name(工具名或指令名)与可选的 arguments 对象");
+                }
+                toolName = innerName;
+                arguments = innerArguments;
+                auditArguments = RedactUnknownAuditArguments(arguments);
+            }
+
             if (!IsValidToolName(toolName))
             {
                 Audit("<invalid>", auditArguments, "拒绝");

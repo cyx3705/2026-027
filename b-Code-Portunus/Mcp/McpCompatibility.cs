@@ -80,6 +80,16 @@ public static class McpSettingKeys
     public const string ConfirmTimeout = "mcp.confirm.timeout";
     public const string PortRetries = "mcp.portretries";
     public const string SessionLimit = "mcp.sessionlimit";
+    public const string Surface = "mcp.surface";
+
+    /// <summary>
+    /// tools/list 的形态：full 每条指令一个工具（缺省）；compact 只列「搜索 + 调用」两个元工具，
+    /// 客户端常驻上下文与指令数无关。只改列法，不改谁能调什么——调用仍走同一套策略与确认判断。
+    /// </summary>
+    public static string ResolveSurface(ISettingsService settings)
+        => string.Equals(settings.Get(Surface)?.Trim(), "compact", StringComparison.OrdinalIgnoreCase)
+            ? "compact"
+            : "full";
 
     public static string ResolvePolicy(ISettingsService settings)
     {

@@ -105,6 +105,8 @@ public static class McpCommands
             sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
             sb.Append($"\n  策略   : {g.Policy}(缺省 standard;portunus.mcp.config key=policy value=readonly 可收窄)");
             sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
+            sb.Append($"\n  列法   : mcp.surface = {g.Surface}" +
+                      $"{(g.Surface == "compact" ? $"(tools/list 只列 {McpGateway.FindToolName} / {McpGateway.CallToolName};portunus.mcp.config key=surface value=full 还原)" : "(每条指令一个工具;portunus.mcp.config key=surface value=compact 只列搜索与调用两个元工具)")}");
             sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
             sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
             sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
@@ -117,6 +119,7 @@ public static class McpCommands
                 port = g.IsRunning ? g.Port : 0,
                 url = g.IsRunning ? CursorMcpConfig.UrlFor(g.Port) : null,
                 policy = g.Policy,
+                surface = g.Surface,
             });
         }),
     };
@@ -181,7 +184,7 @@ public static class McpCommands
             HiddenReason = "防止远程递归管理或关闭 MCP 服务",
             Domain = "portunus",
             CommandClass = "mcp",
-            Summary = "查看或设置 MCP 暴露策略与危险指令处置(持久;省略 value 只查看)",
+            Summary = "查看或设置 MCP 暴露策略、危险指令处置与工具列法(持久;省略 value 只查看)",
             Example = "portunus.mcp.config key=policy value=readonly",
             Level = CommandLevel.Ask,
             ConfirmPrompt = ctx => ctx.Has("value")
@@ -192,8 +195,8 @@ public static class McpCommands
                 new ParameterSpec
                 {
                     Name = "key",
-                    Description = "policy 暴露策略(standard/readonly);confirm 危险指令处置(deny 不暴露、一律拒绝/host 暴露并交宿主确认通道裁决)。省略则列出两项当前值。",
-                    AllowedValues = ["policy", "confirm"],
+                    Description = "policy 暴露策略(standard/readonly);confirm 危险指令处置(deny 不暴露、一律拒绝/host 暴露并交宿主确认通道裁决);surface 工具列法(full 每条指令一个工具/compact 只列搜索与调用两个元工具,客户端重连后生效)。省略则列出全部当前值。",
+                    AllowedValues = ["policy", "confirm", "surface"],
                     Position = 0,
                 },
                 new ParameterSpec
@@ -213,17 +216,19 @@ public static class McpCommands
                 if (string.IsNullOrEmpty(key))
                 {
                     if (ctx.Has("value"))
-                        return CommandResult.Fail("缺少 key(policy / confirm)");
+                        return CommandResult.Fail("缺少 key(policy / confirm / surface)");
                     return CommandResult.Ok(
-                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}",
-                        new { policy = g.Policy, confirm = g.ConfirmMode });
+                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}；mcp.surface = {g.Surface}",
+                        new { policy = g.Policy, confirm = g.ConfirmMode, surface = g.Surface });
                 }
 
                 var settingKey = ConfigKey(key);
                 var allowed = ConfigValues(settingKey);
                 if (!ctx.Has("value"))
                 {
-                    var current = settingKey == McpSettingKeys.Policy ? g.Policy : g.ConfirmMode;
+                    var current = settingKey == McpSettingKeys.Policy ? g.Policy
+                        : settingKey == McpSettingKeys.Confirm ? g.ConfirmMode
+                        : g.Surface;
                     return CommandResult.Ok($"{settingKey} = {current}(可选 {string.Join("/", allowed)})");
                 }
 
@@ -233,20 +238,31 @@ public static class McpCommands
 
                 settings.Set(settingKey, value);
                 // 网关每次请求现读设置,写完即生效,不需要重启监听。
+                // 列法例外:客户端只在握手时拉一次 tools/list,要重连才看到新列法。
                 return CommandResult.Ok(
-                    $"已设置 {settingKey} = {value}(立即生效,当前暴露 {g.VisibleTools().Count} 个工具)",
+                    settingKey == McpSettingKeys.Surface
+                        ? $"已设置 {settingKey} = {value}(客户端重连 MCP 后看到新的工具列法)"
+                        : $"已设置 {settingKey} = {value}(立即生效,当前暴露 {g.VisibleTools().Count} 个工具)",
                     new { key = settingKey, value });
             }),
         };
 
-    /// <summary>短名 policy / confirm 映射到设置键（取值范围由总线按 AllowedValues 先挡）。</summary>
+    /// <summary>短名 policy / confirm / surface 映射到设置键（取值范围由总线按 AllowedValues 先挡）。</summary>
     private static string ConfigKey(string? key)
-        => string.Equals(key?.Trim(), "confirm", StringComparison.OrdinalIgnoreCase)
-            ? McpSettingKeys.Confirm
-            : McpSettingKeys.Policy;
+        => key?.Trim().ToLowerInvariant() switch
+        {
+            "confirm" => McpSettingKeys.Confirm,
+            "surface" => McpSettingKeys.Surface,
+            _ => McpSettingKeys.Policy,
+        };
 
     private static string[] ConfigValues(string settingKey)
-        => settingKey == McpSettingKeys.Confirm ? ["deny", "host"] : ["standard", "readonly"];
+        => settingKey switch
+        {
+            McpSettingKeys.Confirm => ["deny", "host"],
+            McpSettingKeys.Surface => ["full", "compact"],
+            _ => ["standard", "readonly"],
+        };
 
     // ---------------------------------------------------------------- portunus.mcp.schema(MC-05)
 

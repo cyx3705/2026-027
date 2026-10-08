@@ -29,7 +29,7 @@ HistoryPortunus 把 HistoryVulcan 的指令注册表投影给进程外的消费�
 | `portunus.mcp.status` | 运行状态、端口、策略、暴露工具数与最近调用 |
 | `portunus.mcp.start` / `stop` | 启停 MCP 服务，启动时对齐 Cursor `mcp.json` |
 | `portunus.mcp.autostart` | 查看或设置随宿主自动监听 |
-| `portunus.mcp.config` | 查看或设置暴露策略 `policy` 与危险指令处置 `confirm`（写入需确认） |
+| `portunus.mcp.config` | 查看或设置暴露策略 `policy`、危险指令处置 `confirm` 与工具列法 `surface`（写入需确认） |
 | `portunus.mcp.schema` | 查看指令投影成的 MCP 工具形态 |
 | `portunus.mcp.parse` | 调试：把 JSON `arguments` 反向组装成指令文本 |
 
