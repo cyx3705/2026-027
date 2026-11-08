@@ -19,7 +19,7 @@ public sealed partial class McpGateway
     private const int DefaultFindLimit = 8;
     private const int MaxFindLimit = 30;
 
-    private JsonArray CompactTools()
+    private JsonArray MetaTools()
     {
         var visible = VisibleTools();
         var domains = string.Join("、", visible

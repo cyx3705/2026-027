@@ -139,6 +139,106 @@ public sealed class McpCompactSurfaceTests
         Assert.Equal("compact", fixture.Gateway.Surface);
     }
 
+    [Fact]
+    public async Task ModuleOverrideHidesOnlyThatModulesToolsAndKeepsThemCallable()
+    {
+        using var fixture = new Fixture();
+        AddOtherModule(fixture);
+        fixture.Catalog.SetSource("probe.echo", "module:Probe");
+        fixture.Catalog.SetSource("probe.write", "module:Probe");
+
+        using (var full = await fixture.RpcAsync("tools/list", new { }))
+        {
+            var names = ToolNames(full);
+            Assert.Contains("probe_echo", names);
+            Assert.Contains("other_ping", names);
+            Assert.DoesNotContain(McpGateway.FindToolName, names);
+        }
+
+        fixture.Settings.Set(McpSettingKeys.ModuleSurfaceKey("Probe"), "compact");
+        using (var selective = await fixture.RpcAsync("tools/list", new { }))
+        {
+            var names = ToolNames(selective);
+            Assert.DoesNotContain("probe_echo", names);
+            Assert.DoesNotContain("probe_write", names);
+            Assert.Contains("other_ping", names);
+            Assert.Contains(McpGateway.FindToolName, names);
+            Assert.Contains(McpGateway.CallToolName, names);
+        }
+
+        // 隐去的模块仍在同一个查找面里。
+        var hit = await fixture.CallTextAsync(McpGateway.FindToolName, new { query = "echo" });
+        Assert.Equal("probe.echo", hit.GetProperty("tools")[0].GetProperty("name").GetString());
+
+        // 也仍能经 call 执行。
+        using var called = await fixture.RpcAsync("tools/call", new
+        {
+            name = McpGateway.CallToolName,
+            arguments = new { name = "probe.echo", arguments = new { text = "hidden" } },
+        });
+        var result = called.RootElement.GetProperty("result");
+        Assert.False(result.GetProperty("isError").GetBoolean(), result.ToString());
+        Assert.Equal("hidden", result.GetProperty("structuredContent").GetProperty("data").GetString());
+    }
+
+    [Fact]
+    public async Task GlobalCompactCanExpandASingleModule()
+    {
+        using var fixture = new Fixture(surface: "compact");
+        AddOtherModule(fixture);
+        fixture.Catalog.SetSource("probe.echo", "module:Probe");
+        fixture.Settings.Set(McpSettingKeys.ModuleSurfaceKey("Other"), "full");
+
+        using var response = await fixture.RpcAsync("tools/list", new { });
+        var names = ToolNames(response);
+        Assert.Contains("other_ping", names);
+        Assert.DoesNotContain("probe_echo", names);
+        Assert.Contains(McpGateway.FindToolName, names);
+        Assert.Contains(McpGateway.CallToolName, names);
+    }
+
+    [Fact]
+    public async Task SurfaceCommandSetsTogglesAndClearsModuleOverride()
+    {
+        using var fixture = new Fixture();
+        AddOtherModule(fixture);
+
+        var set = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=other mode=compact", "test");
+        Assert.True(set.Success, set.Message);
+        Assert.Equal("compact", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
+        Assert.Equal("compact", fixture.Gateway.SurfaceOf("Other"));
+
+        var list = await fixture.Bus.ExecuteAsync("portunus.mcp.surface", "test");
+        Assert.True(list.Success, list.Message);
+        Assert.Contains("Other=compact", list.Message, StringComparison.OrdinalIgnoreCase);
+
+        var toggle = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=toggle", "test");
+        Assert.True(toggle.Success, toggle.Message);
+        Assert.Equal("full", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
+
+        var inherit = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=inherit", "test");
+        Assert.True(inherit.Success, inherit.Message);
+        Assert.Equal("inherit", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
+        Assert.Equal("full", fixture.Gateway.SurfaceOf("Other"));
+
+        var bad = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=domain", "test");
+        Assert.False(bad.Success);
+        Assert.Equal("full", fixture.Gateway.SurfaceOf("Other"));
+    }
+
+    private static void AddOtherModule(Fixture fixture)
+    {
+        fixture.Registry.Register(new CommandDescriptor
+        {
+            Name = "other.ping",
+            Domain = "other",
+            Summary = "另一个模块的只读指令",
+            Readonly = true,
+            Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("pong")),
+        });
+        fixture.Catalog.SetSource("other.ping", "module:Other");
+    }
+
     private static IReadOnlyList<string?> ToolNames(JsonDocument response)
         => response.RootElement.GetProperty("result").GetProperty("tools")
             .EnumerateArray()

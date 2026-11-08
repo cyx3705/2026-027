@@ -82,6 +82,13 @@ public static class McpSettingKeys
     public const string SessionLimit = "mcp.sessionlimit";
     public const string Surface = "mcp.surface";
 
+    /// <summary>模块级列法覆盖的设置键前缀：<c>mcp.surface.module.&lt;模块名&gt;</c>。</summary>
+    public const string SurfaceModulePrefix = "mcp.surface.module.";
+
+    /// <summary>某个模块的列法覆盖键；模块名大小写不敏感，统一存小写。</summary>
+    public static string ModuleSurfaceKey(string module)
+        => SurfaceModulePrefix + module.Trim().ToLowerInvariant();
+
     /// <summary>
     /// tools/list 的形态：full 每条指令一个工具（缺省）；compact 只列「搜索 + 调用」两个元工具，
     /// 客户端常驻上下文与指令数无关。只改列法，不改谁能调什么——调用仍走同一套策略与确认判断。
@@ -100,6 +107,58 @@ public static class McpSettingKeys
             ? "readonly"
             : "standard";
     }
+}
+
+/// <summary>一个模块的列法覆盖：模块名与 compact/full。</summary>
+public sealed record ModuleSurface(string Module, string Mode);
+
+/// <summary>
+/// 模块级列法的解析规则：<c>mcp.surface.module.&lt;模块名&gt;</c> 覆盖全局 <c>mcp.surface</c>。
+/// 只影响 tools/list 列出哪些工具；查找与调用仍以 <see cref="McpGateway.VisibleTools"/> 为准。
+/// </summary>
+public static class McpSurfacePolicy
+{
+    /// <summary>该模块最终生效的列法；没有覆盖时跟随全局。</summary>
+    public static string Effective(ISettingsService settings, string? module)
+    {
+        if (!string.IsNullOrWhiteSpace(module))
+        {
+            var configured = settings.Get(McpSettingKeys.ModuleSurfaceKey(module))?.Trim();
+            if (configured is not null
+                && (configured.Equals("compact", StringComparison.OrdinalIgnoreCase)
+                    || configured.Equals("full", StringComparison.OrdinalIgnoreCase)))
+                return configured.ToLowerInvariant();
+        }
+
+        return McpSettingKeys.ResolveSurface(settings);
+    }
+
+    /// <summary>指令所属模块（目录来源形如 <c>module:Norma</c>）；宿主框架指令返回 null。</summary>
+    public static string? ModuleOf(CatalogCommand command)
+    {
+        const string prefix = "module:";
+        return command.Source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && command.Source.Length > prefix.Length
+            ? command.Source[prefix.Length..]
+            : null;
+    }
+
+    /// <summary>当前所有 compact/full 覆盖，按模块名排序；inherit 视为没有覆盖。</summary>
+    public static IReadOnlyList<ModuleSurface> Overrides(ISettingsService settings)
+        => settings.All()
+            .Where(pair => pair.Key.StartsWith(McpSettingKeys.SurfaceModulePrefix, StringComparison.OrdinalIgnoreCase))
+            .Select(pair => new ModuleSurface(
+                pair.Key[McpSettingKeys.SurfaceModulePrefix.Length..],
+                Normalize(pair.Value)))
+            .Where(item => item.Mode != "inherit")
+            .OrderBy(item => item.Module, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+    /// <summary>把设置值收成 compact / full / inherit 三种。</summary>
+    public static string Normalize(string? value)
+        => string.Equals(value?.Trim(), "compact", StringComparison.OrdinalIgnoreCase) ? "compact"
+            : string.Equals(value?.Trim(), "full", StringComparison.OrdinalIgnoreCase) ? "full"
+            : "inherit";
 }
 
 /// <summary>Centralized, fail-closed visibility policy for the Portunus MCP projection.</summary>

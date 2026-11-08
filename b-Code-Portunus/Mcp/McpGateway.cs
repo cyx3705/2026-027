@@ -131,6 +131,21 @@ public sealed partial class McpGateway : IDisposable
     /// <summary>tools/list 形态：full / compact(见 McpSettingKeys.ResolveSurface)。</summary>
     public string Surface => McpSettingKeys.ResolveSurface(_settings);
 
+    /// <summary>某个模块最终生效的列法；没有模块覆盖时跟随全局。</summary>
+    public string SurfaceOf(string? module) => McpSurfacePolicy.Effective(_settings, module);
+
+    /// <summary>当前 compact/full 的模块覆盖（inherit 不在内）。</summary>
+    public IReadOnlyList<ModuleSurface> SurfaceOverrides => McpSurfacePolicy.Overrides(_settings);
+
+    /// <summary>全局列法加模块覆盖，供状态回执与人看的提示使用。</summary>
+    public string SurfaceSummary()
+    {
+        var overrides = McpSurfacePolicy.Overrides(_settings);
+        return overrides.Count == 0
+            ? Surface
+            : $"{Surface}（模块覆盖: {string.Join("，", overrides.Select(item => $"{item.Module}={item.Mode}"))}）";
+    }
+
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
     public long CallCount => Interlocked.Read(ref _callCount);
 
@@ -443,11 +458,9 @@ public sealed partial class McpGateway : IDisposable
 
     private JsonObject HandleToolsList(JsonNode? id)
     {
-        if (Surface == "compact")
-            return RpcResult(id, new JsonObject { ["tools"] = CompactTools() });
-
+        var (expanded, hasCompact) = PartitionSurface();
         var tools = new JsonArray();
-        foreach (var t in VisibleTools())
+        foreach (var t in expanded)
         {
             var description = t.Dangerous
                 ? t.Description + "\n⚠ 危险操作:调用会请求宿主端人工确认(mcp.confirm=host),批准后才执行。"
@@ -460,7 +473,39 @@ public sealed partial class McpGateway : IDisposable
             });
         }
 
+        // 有模块进了精简形态时，附上 find/call 两个元工具；没有就保持逐条直列的旧形态。
+        if (hasCompact)
+        {
+            foreach (var tool in MetaTools())
+            {
+                if (tool is not null)
+                    tools.Add(tool.DeepClone());
+            }
+        }
+
         return RpcResult(id, new JsonObject { ["tools"] = tools });
+    }
+
+    /// <summary>
+    /// tools/list 的逐模块分流：生效列法为 compact 的模块不逐个列出，其余模块照旧直列。
+    /// 只要有模块被隐去，就补 find/call 两个入口——查找与调用仍覆盖全部可见工具。
+    /// </summary>
+    private (IReadOnlyList<McpToolInfo> Expanded, bool HasCompact) PartitionSurface()
+    {
+        var expanded = new List<McpToolInfo>();
+        var hasCompact = false;
+        foreach (var tool in VisibleTools())
+        {
+            var module = _catalog.TryGet(tool.CommandName, out var command)
+                ? McpSurfacePolicy.ModuleOf(command)
+                : null;
+            if (McpSurfacePolicy.Effective(_settings, module) == "compact")
+                hasCompact = true;
+            else
+                expanded.Add(tool);
+        }
+
+        return (expanded, hasCompact);
     }
 
     private async Task<JsonObject> HandleToolsCallAsync(
