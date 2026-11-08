@@ -193,6 +193,36 @@ public sealed class McpCompactSurfaceTests
     }
 
     [Fact]
+    public async Task ModuleDefaultKeepsClearedOrNewModulesCompact()
+    {
+        using var fixture = new Fixture();
+        AddOtherModule(fixture);
+        fixture.Catalog.SetSource("probe.echo", "module:Probe");
+        fixture.Catalog.SetSource("probe.write", "module:Probe");
+        fixture.SetModuleDefault("compact");
+
+        using var response = await fixture.RpcAsync("tools/list", new { });
+        var names = ToolNames(response);
+        Assert.DoesNotContain("probe_echo", names);
+        Assert.DoesNotContain("other_ping", names);
+        Assert.Contains(McpGateway.FindToolName, names);
+    }
+
+    [Fact]
+    public async Task SurfacePlanIsRememberedWhileDianaIsReloading()
+    {
+        using var fixture = new Fixture(surface: "compact");
+        using (var before = await fixture.RpcAsync("tools/list", new { }))
+            Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(before));
+
+        // 模块热装时 Diana 会先卸再装：这段窗口里 tools/list 仍必须按上次计划列，不能回到完整。
+        fixture.SetSurfaceAvailable(false);
+        using var during = await fixture.RpcAsync("tools/list", new { });
+        Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(during));
+        Assert.Equal("缓存", fixture.Gateway.SurfaceSource);
+    }
+
+    [Fact]
     public async Task DianaStaysExpandedEvenWhenGlobalIsCompact()
     {
         using var fixture = new Fixture(surface: "compact");
@@ -253,14 +283,17 @@ public sealed class McpCompactSurfaceTests
                 Domain = "diana",
                 Summary = "测试用列法计划",
                 Readonly = true,
-                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(
-                    "plan",
-                    JsonSerializer.SerializeToElement(new
-                    {
-                        global = _surfaceGlobal,
-                        modules = _surfaceModules.Select(pair => new { module = pair.Key, mode = pair.Value }).ToList(),
-                        alwaysFull = new[] { "HistoryDiana" },
-                    }))),
+                Handler = CommandDescriptor.Sync(_ => _surfaceAvailable
+                    ? CommandResult.Ok(
+                        "plan",
+                        JsonSerializer.SerializeToElement(new
+                        {
+                            global = _surfaceGlobal,
+                            moduleDefault = _surfaceDefault,
+                            modules = _surfaceModules.Select(pair => new { module = pair.Key, mode = pair.Value }).ToList(),
+                            alwaysFull = new[] { "HistoryDiana" },
+                        }))
+                    : CommandResult.Fail("Diana 暂不可用")),
             });
 
             Registry.Register(new CommandDescriptor
@@ -313,6 +346,8 @@ public sealed class McpCompactSurfaceTests
         public int Writes { get; private set; }
 
         private string _surfaceGlobal = "full";
+        private string? _surfaceDefault;
+        private bool _surfaceAvailable = true;
         private readonly Dictionary<string, string> _surfaceModules = new(StringComparer.OrdinalIgnoreCase);
 
         public void SetSurface(string global, params (string Module, string Mode)[] modules)
@@ -322,6 +357,11 @@ public sealed class McpCompactSurfaceTests
             foreach (var (module, mode) in modules)
                 _surfaceModules[module] = mode;
         }
+
+        public void SetModuleDefault(string? mode) => _surfaceDefault = mode;
+
+        /// <summary>模拟 Diana 热重载：指令还在目录里，但调用失败。</summary>
+        public void SetSurfaceAvailable(bool available) => _surfaceAvailable = available;
 
         public async Task<JsonDocument> RpcAsync(string method, object parameters)
         {

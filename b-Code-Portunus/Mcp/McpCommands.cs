@@ -218,7 +218,7 @@ public static class McpCommands
                     if (ctx.Has("value"))
                         return CommandResult.Fail("缺少 key(policy / confirm)");
                     return CommandResult.Ok(
-                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}；mcp.surface = {g.Surface}(Diana)",
+                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}；mcp.surface = {g.Surface}（{g.SurfaceSource}）",
                         new { policy = g.Policy, confirm = g.ConfirmMode, surface = g.Surface });
                 }
 

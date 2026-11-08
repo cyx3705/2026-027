@@ -128,39 +128,115 @@ public sealed partial class McpGateway : IDisposable
         }
     }
 
-    /// <summary>tools/list 形态：full / compact，来自 Diana 的列法计划。</summary>
-    public string Surface => ReadSurfacePlan().Global;
+    /// <summary>tools/list 形态：full / compact，来自 Diana 的列法计划（Diana 暂不可读时取缓存）。</summary>
+    public string Surface => ReadSurfacePlan(out _).Global;
 
     /// <summary>当前 compact/full 的模块覆盖（inherit 不在内），来自 Diana 的列法计划。</summary>
-    public IReadOnlyList<SurfaceOverride> SurfaceOverrides => ReadSurfacePlan().Modules;
+    public IReadOnlyList<SurfaceOverride> SurfaceOverrides => ReadSurfacePlan(out _).Modules;
 
-    /// <summary>全局列法加模块覆盖，供状态回执与人看的提示使用。</summary>
-    public string SurfaceSummary()
+    /// <summary>计划的来源：Diana / 缓存 / 缺省；排障用。</summary>
+    public string SurfaceSource
     {
-        var plan = ReadSurfacePlan();
-        return plan.Modules.Count == 0
-            ? plan.Global
-            : $"{plan.Global}（模块覆盖: {string.Join("，", plan.Modules.Select(item => $"{item.Module}={item.Mode}"))}）";
+        get
+        {
+            ReadSurfacePlan(out var source);
+            return source;
+        }
     }
 
+    /// <summary>全局列法、模块默认与模块覆盖，供状态回执与人看的提示使用。</summary>
+    public string SurfaceSummary()
+    {
+        var plan = ReadSurfacePlan(out var source);
+        var text = plan.Modules.Count == 0
+            ? plan.Global
+            : $"{plan.Global}（模块覆盖: {string.Join("，", plan.Modules.Select(item => $"{item.Module}={item.Mode}"))}）";
+        if (plan.ModuleDefault is { } moduleDefault)
+            text += $"；模块默认 {moduleDefault}";
+        return $"{text}；来源 {source}";
+    }
+
+    private readonly object _surfaceGate = new();
+    private string _lastPlanCache = "";
+    private string? _lastSurfaceSource;
+
+    private SurfacePlan ReadSurfacePlan() => ReadSurfacePlan(out _);
+
     /// <summary>
-    /// 取 Diana 的列法计划（<c>diana.surface.plan</c>）。Diana 不在、指令失败或回执不合法时回 full：
-    /// 宁可多列，也不要在没有控制面的时候把工具藏起来。
+    /// 取 Diana 的列法计划（<c>diana.surface.plan</c>）。读到就记进本模块设置；
+    /// Diana 热重载或短暂不可读时沿用上次结果——模块更新不再让设置回落到「全部完整」。
+    /// 只有从没读到过计划时才用 full：宁可多列，也不要在没有控制面的时候把工具藏起来。
     /// </summary>
-    private SurfacePlan ReadSurfacePlan()
+    private SurfacePlan ReadSurfacePlan(out string source)
+    {
+        if (TryReadDianaPlan() is { } plan)
+        {
+            source = "Diana";
+            RememberPlan(plan);
+            NoteSurfaceSource(source);
+            return plan;
+        }
+
+        if (SurfacePlan.FromCacheJson(_settings.Get(McpSettingKeys.SurfaceCache)) is { } cached)
+        {
+            source = "缓存";
+            NoteSurfaceSource(source);
+            return cached;
+        }
+
+        source = "缺省";
+        NoteSurfaceSource(source);
+        return SurfacePlan.Full;
+    }
+
+    private SurfacePlan? TryReadDianaPlan()
     {
         var bus = _busAccessor();
         if (bus == null)
-            return SurfacePlan.Full;
+            return null;
         try
         {
             var result = bus.InvokeAsync("diana.surface.plan", "").GetAwaiter().GetResult();
-            return result.Success ? SurfacePlan.FromData(result.Data) : SurfacePlan.Full;
+            return result.Success && result.Data is not null ? SurfacePlan.FromData(result.Data) : null;
         }
         catch (Exception ex) when (ex is InvalidOperationException or JsonException or NotSupportedException)
         {
-            return SurfacePlan.Full;
+            return null;
         }
+    }
+
+    private void RememberPlan(SurfacePlan plan)
+    {
+        var text = plan.ToCacheJson();
+        lock (_surfaceGate)
+        {
+            if (text == _lastPlanCache)
+                return;
+            _lastPlanCache = text;
+        }
+        try
+        {
+            _settings.Set(McpSettingKeys.SurfaceCache, text);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            _log.Warn("mcp", $"列法缓存写入失败: {ex.Message}");
+        }
+    }
+
+    /// <summary>来源变化才记一行，避免每次 tools/list 都写日志。</summary>
+    private void NoteSurfaceSource(string source)
+    {
+        lock (_surfaceGate)
+        {
+            if (string.Equals(_lastSurfaceSource, source, StringComparison.Ordinal))
+                return;
+            _lastSurfaceSource = source;
+        }
+        if (source == "缓存")
+            _log.Warn("mcp", "Diana 列法计划暂不可读，沿用上次记录（MCP 工具列法保持不变）");
+        else if (source == "Diana")
+            _log.Info("mcp", "MCP 工具列法由 Diana 提供");
     }
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>

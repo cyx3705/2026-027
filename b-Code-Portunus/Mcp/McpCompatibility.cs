@@ -81,6 +81,9 @@ public static class McpSettingKeys
     public const string PortRetries = "mcp.portretries";
     public const string SessionLimit = "mcp.sessionlimit";
 
+    /// <summary>最近一次成功读到的列法计划；Diana 暂不可读时沿用它，设置不因模块热装回落到完整。</summary>
+    public const string SurfaceCache = "mcp.surface.cache";
+
     public static string ResolvePolicy(ISettingsService settings)
     {
         var configured = settings.Get(Policy);
@@ -98,23 +101,33 @@ public sealed record SurfaceOverride(string Module, string Mode);
 /// <summary>
 /// Portunus 对 Diana 列法计划的只读投影。控制点与设置都在 Diana（<c>diana.surface</c>），
 /// 本模块只在 tools/list 时取一次计划并机械执行；Diana 自己由计划里的 alwaysFull 保证永远 full。
+/// 计划会缓存在本模块设置里：Diana 热重载或短暂不可读时沿用上次结果，不退回「全部完整」。
 /// </summary>
 public sealed class SurfacePlan
 {
     /// <summary>取不到计划时的安全缺省：全部逐条列出。</summary>
     public static SurfacePlan Full { get; } = new(
         "full",
+        null,
         [],
         new HashSet<string>(new[] { "HistoryDiana" }, StringComparer.OrdinalIgnoreCase));
 
-    public SurfacePlan(string global, IReadOnlyList<SurfaceOverride> modules, IReadOnlySet<string> alwaysFull)
+    public SurfacePlan(
+        string global,
+        string? moduleDefault,
+        IReadOnlyList<SurfaceOverride> modules,
+        IReadOnlySet<string> alwaysFull)
     {
         Global = global;
+        ModuleDefault = moduleDefault;
         Modules = modules;
         AlwaysFull = alwaysFull;
     }
 
     public string Global { get; }
+
+    /// <summary>未单独设置的模块按它；null 表示跟随 <see cref="Global"/>。</summary>
+    public string? ModuleDefault { get; }
 
     /// <summary>显式 compact/full 的模块覆盖（不含跟随全局的模块）。</summary>
     public IReadOnlyList<SurfaceOverride> Modules { get; }
@@ -129,10 +142,40 @@ public sealed class SurfacePlan
         if (AlwaysFull.Contains(module))
             return "full";
         var configured = Modules.FirstOrDefault(item => item.Module.Equals(module, StringComparison.OrdinalIgnoreCase));
-        return configured?.Mode ?? Global;
+        return configured?.Mode ?? ModuleDefault ?? Global;
     }
 
     public bool IsCompact(string? module) => Effective(module) == "compact";
+
+    /// <summary>缓存用的稳定文本；与读回的顺序无关，便于比较是否需要重写设置。</summary>
+    public string ToCacheJson() => JsonSerializer.Serialize(new
+    {
+        global = Global,
+        moduleDefault = ModuleDefault,
+        modules = Modules
+            .OrderBy(item => item.Module, StringComparer.OrdinalIgnoreCase)
+            .Select(item => new { module = item.Module, mode = item.Mode })
+            .ToList(),
+        alwaysFull = AlwaysFull.OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList(),
+    });
+
+    /// <summary>读回缓存文本；空或不是 JSON 对象时返回 null（不能把坏缓存当成 full 计划）。</summary>
+    public static SurfacePlan? FromCacheJson(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                ? FromData(document.RootElement.Clone())
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     public static SurfacePlan FromData(object? data)
     {
@@ -149,6 +192,11 @@ public sealed class SurfacePlan
             var global = string.Equals(Text(root, "global"), "compact", StringComparison.OrdinalIgnoreCase)
                 ? "compact"
                 : "full";
+            var moduleDefault = Text(root, "moduleDefault") is { } fallback
+                                && (fallback.Equals("compact", StringComparison.OrdinalIgnoreCase)
+                                    || fallback.Equals("full", StringComparison.OrdinalIgnoreCase))
+                ? fallback.ToLowerInvariant()
+                : null;
             var modules = new List<SurfaceOverride>();
             if (root.TryGetProperty("modules", out var rows) && rows.ValueKind == JsonValueKind.Array)
             {
@@ -174,7 +222,7 @@ public sealed class SurfacePlan
                 }
             }
 
-            return new SurfacePlan(global, modules, alwaysFull);
+            return new SurfacePlan(global, moduleDefault, modules, alwaysFull);
         }
         catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
         {
