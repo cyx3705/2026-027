@@ -32,7 +32,6 @@ public static class McpCommands
         registry.Register(BuildStatus(gateway));
         registry.Register(BuildAutostart(gateway, settings));
         registry.Register(BuildConfig(gateway, settings));
-        registry.Register(BuildSurface(gateway, settings, catalog));
 
         // vulcan.command.list / show / domains / manual 不在这里注册：
         // 它们是宿主的指令自省面，随宿主装配，不随本模块来去。
@@ -106,7 +105,7 @@ public static class McpCommands
             sb.Append($"MCP 服务: {(g.IsRunning ? $"运行中 http://127.0.0.1:{g.Port}/mcp" : "未启动(portunus.mcp.start 开启)")}");
             sb.Append($"\n  策略   : {g.Policy}(缺省 standard;portunus.mcp.config key=policy value=readonly 可收窄)");
             sb.Append($"\n  暴露   : {g.VisibleTools().Count} 个工具(portunus.mcp.schema 看全量形态)");
-            sb.Append($"\n  列法   : {g.SurfaceSummary()}(全局缺省 {g.Surface};portunus.mcp.surface module=<模块> mode=compact|full|inherit 按模块覆盖)");
+            sb.Append($"\n  列法   : {g.SurfaceSummary()}(由 Diana 控制;diana.surface module=<模块> mode=compact|full|inherit|toggle)");
             sb.Append("\n  令牌   : 不校验(本机回环,Cursor mcp.json 只写 url)");
             sb.Append($"\n  自启动 : mcp.autostart = {(g.AutostartEnabled ? "true" : "false")}");
             sb.Append($"\n  危险指令: mcp.confirm = {g.ConfirmMode}" +
@@ -196,8 +195,8 @@ public static class McpCommands
                 new ParameterSpec
                 {
                     Name = "key",
-                    Description = "policy 暴露策略(standard/readonly);confirm 危险指令处置(deny 不暴露、一律拒绝/host 暴露并交宿主确认通道裁决);surface 全局工具列法(full 每条指令一个工具/compact 只列搜索与调用两个元工具,客户端重连后生效;单个模块用 portunus.mcp.surface)。省略则列出全部当前值。",
-                    AllowedValues = ["policy", "confirm", "surface"],
+                    Description = "policy 暴露策略(standard/readonly);confirm 危险指令处置(deny 不暴露、一律拒绝/host 暴露并交宿主确认通道裁决)。省略则列出全部当前值。工具列法不在这里，见 Diana 的 diana.surface。",
+                    AllowedValues = ["policy", "confirm"],
                     Position = 0,
                 },
                 new ParameterSpec
@@ -217,9 +216,9 @@ public static class McpCommands
                 if (string.IsNullOrEmpty(key))
                 {
                     if (ctx.Has("value"))
-                        return CommandResult.Fail("缺少 key(policy / confirm / surface)");
+                        return CommandResult.Fail("缺少 key(policy / confirm)");
                     return CommandResult.Ok(
-                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}；mcp.surface = {g.Surface}",
+                        $"mcp.policy = {g.Policy}；mcp.confirm = {g.ConfirmMode}；mcp.surface = {g.Surface}(Diana)",
                         new { policy = g.Policy, confirm = g.ConfirmMode, surface = g.Surface });
                 }
 
@@ -227,9 +226,7 @@ public static class McpCommands
                 var allowed = ConfigValues(settingKey);
                 if (!ctx.Has("value"))
                 {
-                    var current = settingKey == McpSettingKeys.Policy ? g.Policy
-                        : settingKey == McpSettingKeys.Confirm ? g.ConfirmMode
-                        : g.Surface;
+                    var current = settingKey == McpSettingKeys.Policy ? g.Policy : g.ConfirmMode;
                     return CommandResult.Ok($"{settingKey} = {current}(可选 {string.Join("/", allowed)})");
                 }
 
@@ -239,154 +236,17 @@ public static class McpCommands
 
                 settings.Set(settingKey, value);
                 // 网关每次请求现读设置,写完即生效,不需要重启监听。
-                // 列法例外:客户端只在握手时拉一次 tools/list,要重连才看到新列法。
                 return CommandResult.Ok(
-                    settingKey == McpSettingKeys.Surface
-                        ? $"已设置 {settingKey} = {value}(客户端重连 MCP 后看到新的工具列法)"
-                        : $"已设置 {settingKey} = {value}(立即生效,当前暴露 {g.VisibleTools().Count} 个工具)",
+                    $"已设置 {settingKey} = {value}(立即生效,当前暴露 {g.VisibleTools().Count} 个工具)",
                     new { key = settingKey, value });
             }),
         };
 
-    /// <summary>
-    /// 模块级列法：省略 module 列出全局与全部模块；给 module 省略 mode 只查看；
-    /// mode 支持 compact / full / inherit（跟随全局）/ toggle（当前两者互换）。
-    /// </summary>
-    private static CommandDescriptor BuildSurface(
-        Func<McpGateway?> gateway, ISettingsService settings, ICommandCatalog catalog) => new()
-        {
-            Name = "portunus.mcp.surface",
-            HiddenReason = "防止远程递归管理或关闭 MCP 服务",
-            Domain = "portunus",
-            CommandClass = "mcp",
-            Summary = "查看或设置单个模块的 MCP 工具列法(精简/完整;省略参数列出全部)",
-            Example = "portunus.mcp.surface module=Norma mode=compact",
-            Parameters =
-            [
-                new ParameterSpec
-                {
-                    Name = "module",
-                    Description = "模块名或指令域(如 Norma / norma);省略列出全局与全部模块",
-                    Position = 0,
-                },
-                new ParameterSpec
-                {
-                    Name = "mode",
-                    Description = "compact 只列搜索与调用两个元工具;full 逐条列出;inherit 跟随全局;toggle 在当前两者间切换。省略只查看。",
-                    AllowedValues = ["compact", "full", "inherit", "toggle"],
-                    Position = 1,
-                },
-            ],
-            Handler = CommandDescriptor.Sync(ctx =>
-            {
-                var g = gateway();
-                if (g == null)
-                    return CommandResult.Fail("网关未装配");
-
-                var moduleInput = ctx.GetString("module")?.Trim();
-                var modeInput = ctx.GetString("mode")?.Trim().ToLowerInvariant();
-
-                if (string.IsNullOrEmpty(moduleInput))
-                {
-                    if (!string.IsNullOrEmpty(modeInput))
-                        return CommandResult.Fail("缺少 module；用法 portunus.mcp.surface module=Norma mode=compact");
-                    var rows = SurfaceRows(g, settings, catalog);
-                    var text = rows.Count == 0
-                        ? $"mcp.surface = {g.Surface}；还没有模块单独设置列法"
-                        : $"mcp.surface = {g.Surface}；{string.Join("；", rows.Select(row => $"{row.Module}={row.Mode}{(row.Override == "inherit" ? "(跟随全局)" : "")}"))}";
-                    return CommandResult.Ok(text, new { global = g.Surface, modules = rows });
-                }
-
-                var (module, known) = ResolveModule(moduleInput, catalog);
-                if (string.IsNullOrEmpty(modeInput))
-                {
-                    var overrideMode = McpSurfacePolicy.Normalize(settings.Get(McpSettingKeys.ModuleSurfaceKey(module)));
-                    var effective = g.SurfaceOf(module);
-                    return CommandResult.Ok(
-                        $"{module} = {effective}{(overrideMode == "inherit" ? "(跟随全局)" : $"(覆盖 {overrideMode})")}"
-                        + (known ? "" : "；当前目录里没有这个模块，先按模块名记下"),
-                        new { module, mode = effective, @override = overrideMode });
-                }
-
-                var current = g.SurfaceOf(module);
-                var mode = modeInput == "toggle"
-                    ? (current == "compact" ? "full" : "compact")
-                    : modeInput;
-                if (mode is not ("compact" or "full" or "inherit"))
-                    return CommandResult.Fail($"mode 取值应为 compact/full/inherit/toggle，实际: {mode}");
-
-                settings.Set(McpSettingKeys.ModuleSurfaceKey(module), mode);
-                var after = g.SurfaceOf(module);
-                var hint = known ? "" : "；当前目录里没有这个模块，装上后自动按此设置";
-                return CommandResult.Ok(
-                    mode == "inherit"
-                        ? $"已清除 {module} 的列法覆盖（跟随全局 {g.Surface}）{hint}；客户端重连 MCP 后生效"
-                        : $"已设置 {module} 的 MCP 工具列法 = {after}{hint}；客户端重连 MCP 后看到新的工具列表",
-                    new { module, mode, effective = after, global = g.Surface });
-            }),
-        };
-
-    private sealed record SurfaceRow(string Module, string Mode, string Override);
-
-    private static List<SurfaceRow> SurfaceRows(McpGateway gateway, ISettingsService settings, ICommandCatalog catalog)
-    {
-        var loaded = catalog.All()
-            .Select(McpSurfacePolicy.ModuleOf)
-            .Where(module => !string.IsNullOrWhiteSpace(module))
-            .Select(module => module!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var overrides = McpSurfacePolicy.Overrides(settings)
-            .ToDictionary(item => item.Module, item => item.Mode, StringComparer.OrdinalIgnoreCase);
-
-        return loaded
-            .Concat(overrides.Keys)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(module => module, StringComparer.OrdinalIgnoreCase)
-            .Select(module =>
-            {
-                var canonical = loaded.FirstOrDefault(item => item.Equals(module, StringComparison.OrdinalIgnoreCase)) ?? module;
-                return new SurfaceRow(
-                    canonical,
-                    gateway.SurfaceOf(canonical),
-                    overrides.TryGetValue(module, out var overrideMode) ? overrideMode : "inherit");
-            })
-            .ToList();
-    }
-
-    /// <summary>模块名或指令域都接受；当前目录里找不到时按模块名记下，不拒绝。</summary>
-    private static (string Module, bool Known) ResolveModule(string input, ICommandCatalog catalog)
-    {
-        var commands = catalog.All();
-        var loaded = commands
-            .Select(McpSurfacePolicy.ModuleOf)
-            .Where(module => !string.IsNullOrWhiteSpace(module))
-            .Select(module => module!)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var byName = loaded.FirstOrDefault(module => module.Equals(input, StringComparison.OrdinalIgnoreCase));
-        if (byName != null)
-            return (byName, true);
-
-        var byDomain = commands
-            .Where(command => DomainOf(command.Name).Equals(input, StringComparison.OrdinalIgnoreCase))
-            .Select(McpSurfacePolicy.ModuleOf)
-            .FirstOrDefault(module => !string.IsNullOrWhiteSpace(module));
-        return byDomain != null ? (byDomain, true) : (input, false);
-    }
-
-    private static string DomainOf(string commandName)
-    {
-        var dot = commandName.IndexOf('.');
-        return dot > 0 ? commandName[..dot] : commandName;
-    }
-
-    /// <summary>短名 policy / confirm / surface 映射到设置键（取值范围由总线按 AllowedValues 先挡）。</summary>
+    /// <summary>短名 policy / confirm 映射到设置键（取值范围由总线按 AllowedValues 先挡）。</summary>
     private static string ConfigKey(string? key)
         => key?.Trim().ToLowerInvariant() switch
         {
             "confirm" => McpSettingKeys.Confirm,
-            "surface" => McpSettingKeys.Surface,
             _ => McpSettingKeys.Policy,
         };
 
@@ -394,7 +254,6 @@ public static class McpCommands
         => settingKey switch
         {
             McpSettingKeys.Confirm => ["deny", "host"],
-            McpSettingKeys.Surface => ["full", "compact"],
             _ => ["standard", "readonly"],
         };
 

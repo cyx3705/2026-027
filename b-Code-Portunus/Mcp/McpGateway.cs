@@ -128,22 +128,39 @@ public sealed partial class McpGateway : IDisposable
         }
     }
 
-    /// <summary>tools/list 形态：full / compact(见 McpSettingKeys.ResolveSurface)。</summary>
-    public string Surface => McpSettingKeys.ResolveSurface(_settings);
+    /// <summary>tools/list 形态：full / compact，来自 Diana 的列法计划。</summary>
+    public string Surface => ReadSurfacePlan().Global;
 
-    /// <summary>某个模块最终生效的列法；没有模块覆盖时跟随全局。</summary>
-    public string SurfaceOf(string? module) => McpSurfacePolicy.Effective(_settings, module);
-
-    /// <summary>当前 compact/full 的模块覆盖（inherit 不在内）。</summary>
-    public IReadOnlyList<ModuleSurface> SurfaceOverrides => McpSurfacePolicy.Overrides(_settings);
+    /// <summary>当前 compact/full 的模块覆盖（inherit 不在内），来自 Diana 的列法计划。</summary>
+    public IReadOnlyList<SurfaceOverride> SurfaceOverrides => ReadSurfacePlan().Modules;
 
     /// <summary>全局列法加模块覆盖，供状态回执与人看的提示使用。</summary>
     public string SurfaceSummary()
     {
-        var overrides = McpSurfacePolicy.Overrides(_settings);
-        return overrides.Count == 0
-            ? Surface
-            : $"{Surface}（模块覆盖: {string.Join("，", overrides.Select(item => $"{item.Module}={item.Mode}"))}）";
+        var plan = ReadSurfacePlan();
+        return plan.Modules.Count == 0
+            ? plan.Global
+            : $"{plan.Global}（模块覆盖: {string.Join("，", plan.Modules.Select(item => $"{item.Module}={item.Mode}"))}）";
+    }
+
+    /// <summary>
+    /// 取 Diana 的列法计划（<c>diana.surface.plan</c>）。Diana 不在、指令失败或回执不合法时回 full：
+    /// 宁可多列，也不要在没有控制面的时候把工具藏起来。
+    /// </summary>
+    private SurfacePlan ReadSurfacePlan()
+    {
+        var bus = _busAccessor();
+        if (bus == null)
+            return SurfacePlan.Full;
+        try
+        {
+            var result = bus.InvokeAsync("diana.surface.plan", "").GetAwaiter().GetResult();
+            return result.Success ? SurfacePlan.FromData(result.Data) : SurfacePlan.Full;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or JsonException or NotSupportedException)
+        {
+            return SurfacePlan.Full;
+        }
     }
 
     /// <summary>Provides this HistoryVulcan public contract member.</summary>
@@ -492,20 +509,31 @@ public sealed partial class McpGateway : IDisposable
     /// </summary>
     private (IReadOnlyList<McpToolInfo> Expanded, bool HasCompact) PartitionSurface()
     {
+        var plan = ReadSurfacePlan();
         var expanded = new List<McpToolInfo>();
         var hasCompact = false;
         foreach (var tool in VisibleTools())
         {
             var module = _catalog.TryGet(tool.CommandName, out var command)
-                ? McpSurfacePolicy.ModuleOf(command)
+                ? ModuleOf(command)
                 : null;
-            if (McpSurfacePolicy.Effective(_settings, module) == "compact")
+            if (plan.IsCompact(module))
                 hasCompact = true;
             else
                 expanded.Add(tool);
         }
 
         return (expanded, hasCompact);
+    }
+
+    /// <summary>指令所属模块（目录来源形如 <c>module:Norma</c>）；宿主框架指令返回 null。</summary>
+    private static string? ModuleOf(CatalogCommand command)
+    {
+        const string prefix = "module:";
+        return command.Source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+               && command.Source.Length > prefix.Length
+            ? command.Source[prefix.Length..]
+            : null;
     }
 
     private async Task<JsonObject> HandleToolsCallAsync(

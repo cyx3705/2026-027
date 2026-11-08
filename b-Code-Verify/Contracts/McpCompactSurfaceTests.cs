@@ -28,7 +28,7 @@ public sealed class McpCompactSurfaceTests
             Assert.DoesNotContain(McpGateway.FindToolName, names);
         }
 
-        fixture.Settings.Set(McpSettingKeys.Surface, "compact");
+        fixture.SetSurface("compact");
         using var compact = await fixture.RpcAsync("tools/list", new { });
         Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(compact));
         Assert.Contains("probe(2)", compact.RootElement.ToString(), StringComparison.Ordinal);
@@ -126,17 +126,12 @@ public sealed class McpCompactSurfaceTests
     }
 
     [Fact]
-    public async Task ConfigCommandWritesSurface()
+    public async Task SurfaceIsOwnedByDianaSoConfigRejectsIt()
     {
         using var fixture = new Fixture();
         var set = await fixture.Bus.ExecuteAsync("portunus.mcp.config key=surface value=COMPACT", "test");
-        Assert.True(set.Success, set.Message);
-        Assert.Equal("compact", fixture.Settings.Get(McpSettingKeys.Surface));
-        Assert.Equal("compact", fixture.Gateway.Surface);
-
-        var bad = await fixture.Bus.ExecuteAsync("portunus.mcp.config key=surface value=domain", "test");
-        Assert.False(bad.Success);
-        Assert.Equal("compact", fixture.Gateway.Surface);
+        Assert.False(set.Success);
+        Assert.Equal("full", fixture.Gateway.Surface);
     }
 
     [Fact]
@@ -155,7 +150,7 @@ public sealed class McpCompactSurfaceTests
             Assert.DoesNotContain(McpGateway.FindToolName, names);
         }
 
-        fixture.Settings.Set(McpSettingKeys.ModuleSurfaceKey("Probe"), "compact");
+        fixture.SetSurface("full", ("Probe", "compact"));
         using (var selective = await fixture.RpcAsync("tools/list", new { }))
         {
             var names = ToolNames(selective);
@@ -187,7 +182,7 @@ public sealed class McpCompactSurfaceTests
         using var fixture = new Fixture(surface: "compact");
         AddOtherModule(fixture);
         fixture.Catalog.SetSource("probe.echo", "module:Probe");
-        fixture.Settings.Set(McpSettingKeys.ModuleSurfaceKey("Other"), "full");
+        fixture.SetSurface("compact", ("Other", "full"));
 
         using var response = await fixture.RpcAsync("tools/list", new { });
         var names = ToolNames(response);
@@ -198,32 +193,24 @@ public sealed class McpCompactSurfaceTests
     }
 
     [Fact]
-    public async Task SurfaceCommandSetsTogglesAndClearsModuleOverride()
+    public async Task DianaStaysExpandedEvenWhenGlobalIsCompact()
     {
-        using var fixture = new Fixture();
-        AddOtherModule(fixture);
+        using var fixture = new Fixture(surface: "compact");
+        fixture.Registry.Register(new CommandDescriptor
+        {
+            Name = "diana.ping",
+            Domain = "diana",
+            Summary = "Diana 自己的只读指令",
+            Readonly = true,
+            Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("pong")),
+        });
+        fixture.Catalog.SetSource("diana.ping", "module:HistoryDiana");
 
-        var set = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=other mode=compact", "test");
-        Assert.True(set.Success, set.Message);
-        Assert.Equal("compact", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
-        Assert.Equal("compact", fixture.Gateway.SurfaceOf("Other"));
-
-        var list = await fixture.Bus.ExecuteAsync("portunus.mcp.surface", "test");
-        Assert.True(list.Success, list.Message);
-        Assert.Contains("Other=compact", list.Message, StringComparison.OrdinalIgnoreCase);
-
-        var toggle = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=toggle", "test");
-        Assert.True(toggle.Success, toggle.Message);
-        Assert.Equal("full", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
-
-        var inherit = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=inherit", "test");
-        Assert.True(inherit.Success, inherit.Message);
-        Assert.Equal("inherit", fixture.Settings.Get(McpSettingKeys.ModuleSurfaceKey("Other")));
-        Assert.Equal("full", fixture.Gateway.SurfaceOf("Other"));
-
-        var bad = await fixture.Bus.ExecuteAsync("portunus.mcp.surface module=Other mode=domain", "test");
-        Assert.False(bad.Success);
-        Assert.Equal("full", fixture.Gateway.SurfaceOf("Other"));
+        using var response = await fixture.RpcAsync("tools/list", new { });
+        var names = ToolNames(response);
+        Assert.Contains("diana_ping", names);
+        Assert.Contains(McpGateway.FindToolName, names);
+        Assert.DoesNotContain("probe_echo", names);
     }
 
     private static void AddOtherModule(Fixture fixture)
@@ -258,8 +245,23 @@ public sealed class McpCompactSurfaceTests
             Registry = new TestRegistrar();
             Catalog = new TestCatalog(Registry);
             Bus = new TestCommandBus(Registry, _ => true);
-            if (surface != null)
-                Settings.Set(McpSettingKeys.Surface, surface);
+            SetSurface(surface ?? "full");
+
+            Registry.Register(new CommandDescriptor
+            {
+                Name = "diana.surface.plan",
+                Domain = "diana",
+                Summary = "测试用列法计划",
+                Readonly = true,
+                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok(
+                    "plan",
+                    JsonSerializer.SerializeToElement(new
+                    {
+                        global = _surfaceGlobal,
+                        modules = _surfaceModules.Select(pair => new { module = pair.Key, mode = pair.Value }).ToList(),
+                        alwaysFull = new[] { "HistoryDiana" },
+                    }))),
+            });
 
             Registry.Register(new CommandDescriptor
             {
@@ -309,6 +311,17 @@ public sealed class McpCompactSurfaceTests
         public MemorySettings Settings { get; } = new();
         public McpGateway Gateway { get; }
         public int Writes { get; private set; }
+
+        private string _surfaceGlobal = "full";
+        private readonly Dictionary<string, string> _surfaceModules = new(StringComparer.OrdinalIgnoreCase);
+
+        public void SetSurface(string global, params (string Module, string Mode)[] modules)
+        {
+            _surfaceGlobal = global;
+            _surfaceModules.Clear();
+            foreach (var (module, mode) in modules)
+                _surfaceModules[module] = mode;
+        }
 
         public async Task<JsonDocument> RpcAsync(string method, object parameters)
         {

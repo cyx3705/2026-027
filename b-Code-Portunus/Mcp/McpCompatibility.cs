@@ -80,23 +80,6 @@ public static class McpSettingKeys
     public const string ConfirmTimeout = "mcp.confirm.timeout";
     public const string PortRetries = "mcp.portretries";
     public const string SessionLimit = "mcp.sessionlimit";
-    public const string Surface = "mcp.surface";
-
-    /// <summary>模块级列法覆盖的设置键前缀：<c>mcp.surface.module.&lt;模块名&gt;</c>。</summary>
-    public const string SurfaceModulePrefix = "mcp.surface.module.";
-
-    /// <summary>某个模块的列法覆盖键；模块名大小写不敏感，统一存小写。</summary>
-    public static string ModuleSurfaceKey(string module)
-        => SurfaceModulePrefix + module.Trim().ToLowerInvariant();
-
-    /// <summary>
-    /// tools/list 的形态：full 每条指令一个工具（缺省）；compact 只列「搜索 + 调用」两个元工具，
-    /// 客户端常驻上下文与指令数无关。只改列法，不改谁能调什么——调用仍走同一套策略与确认判断。
-    /// </summary>
-    public static string ResolveSurface(ISettingsService settings)
-        => string.Equals(settings.Get(Surface)?.Trim(), "compact", StringComparison.OrdinalIgnoreCase)
-            ? "compact"
-            : "full";
 
     public static string ResolvePolicy(ISettingsService settings)
     {
@@ -110,55 +93,101 @@ public static class McpSettingKeys
 }
 
 /// <summary>一个模块的列法覆盖：模块名与 compact/full。</summary>
-public sealed record ModuleSurface(string Module, string Mode);
+public sealed record SurfaceOverride(string Module, string Mode);
 
 /// <summary>
-/// 模块级列法的解析规则：<c>mcp.surface.module.&lt;模块名&gt;</c> 覆盖全局 <c>mcp.surface</c>。
-/// 只影响 tools/list 列出哪些工具；查找与调用仍以 <see cref="McpGateway.VisibleTools"/> 为准。
+/// Portunus 对 Diana 列法计划的只读投影。控制点与设置都在 Diana（<c>diana.surface</c>），
+/// 本模块只在 tools/list 时取一次计划并机械执行；Diana 自己由计划里的 alwaysFull 保证永远 full。
 /// </summary>
-public static class McpSurfacePolicy
+public sealed class SurfacePlan
 {
-    /// <summary>该模块最终生效的列法；没有覆盖时跟随全局。</summary>
-    public static string Effective(ISettingsService settings, string? module)
+    /// <summary>取不到计划时的安全缺省：全部逐条列出。</summary>
+    public static SurfacePlan Full { get; } = new(
+        "full",
+        [],
+        new HashSet<string>(new[] { "HistoryDiana" }, StringComparer.OrdinalIgnoreCase));
+
+    public SurfacePlan(string global, IReadOnlyList<SurfaceOverride> modules, IReadOnlySet<string> alwaysFull)
     {
-        if (!string.IsNullOrWhiteSpace(module))
+        Global = global;
+        Modules = modules;
+        AlwaysFull = alwaysFull;
+    }
+
+    public string Global { get; }
+
+    /// <summary>显式 compact/full 的模块覆盖（不含跟随全局的模块）。</summary>
+    public IReadOnlyList<SurfaceOverride> Modules { get; }
+
+    /// <summary>无论全局是什么都必须逐条列出的模块；Diana 自己恒在此列。</summary>
+    public IReadOnlySet<string> AlwaysFull { get; }
+
+    public string Effective(string? module)
+    {
+        if (module is null)
+            return Global;
+        if (AlwaysFull.Contains(module))
+            return "full";
+        var configured = Modules.FirstOrDefault(item => item.Module.Equals(module, StringComparison.OrdinalIgnoreCase));
+        return configured?.Mode ?? Global;
+    }
+
+    public bool IsCompact(string? module) => Effective(module) == "compact";
+
+    public static SurfacePlan FromData(object? data)
+    {
+        if (data is null)
+            return Full;
+        try
         {
-            var configured = settings.Get(McpSettingKeys.ModuleSurfaceKey(module))?.Trim();
-            if (configured is not null
-                && (configured.Equals("compact", StringComparison.OrdinalIgnoreCase)
-                    || configured.Equals("full", StringComparison.OrdinalIgnoreCase)))
-                return configured.ToLowerInvariant();
+            var root = data is JsonElement element
+                ? element
+                : JsonSerializer.SerializeToElement(data, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            if (root.ValueKind != JsonValueKind.Object)
+                return Full;
+
+            var global = string.Equals(Text(root, "global"), "compact", StringComparison.OrdinalIgnoreCase)
+                ? "compact"
+                : "full";
+            var modules = new List<SurfaceOverride>();
+            if (root.TryGetProperty("modules", out var rows) && rows.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var row in rows.EnumerateArray())
+                {
+                    var module = Text(row, "module");
+                    var mode = Text(row, "mode");
+                    if (!string.IsNullOrWhiteSpace(module)
+                        && mode is not null
+                        && (mode.Equals("compact", StringComparison.OrdinalIgnoreCase)
+                            || mode.Equals("full", StringComparison.OrdinalIgnoreCase)))
+                        modules.Add(new SurfaceOverride(module, mode.ToLowerInvariant()));
+                }
+            }
+
+            var alwaysFull = new HashSet<string>(new[] { "HistoryDiana" }, StringComparer.OrdinalIgnoreCase);
+            if (root.TryGetProperty("alwaysFull", out var always) && always.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in always.EnumerateArray())
+                {
+                    if (item.ValueKind == JsonValueKind.String && item.GetString() is { Length: > 0 } name)
+                        alwaysFull.Add(name);
+                }
+            }
+
+            return new SurfacePlan(global, modules, alwaysFull);
         }
-
-        return McpSettingKeys.ResolveSurface(settings);
+        catch (Exception ex) when (ex is JsonException or NotSupportedException or InvalidOperationException)
+        {
+            return Full;
+        }
     }
 
-    /// <summary>指令所属模块（目录来源形如 <c>module:Norma</c>）；宿主框架指令返回 null。</summary>
-    public static string? ModuleOf(CatalogCommand command)
-    {
-        const string prefix = "module:";
-        return command.Source.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-               && command.Source.Length > prefix.Length
-            ? command.Source[prefix.Length..]
+    private static string? Text(JsonElement element, string name)
+        => element.ValueKind == JsonValueKind.Object
+           && element.TryGetProperty(name, out var value)
+           && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
             : null;
-    }
-
-    /// <summary>当前所有 compact/full 覆盖，按模块名排序；inherit 视为没有覆盖。</summary>
-    public static IReadOnlyList<ModuleSurface> Overrides(ISettingsService settings)
-        => settings.All()
-            .Where(pair => pair.Key.StartsWith(McpSettingKeys.SurfaceModulePrefix, StringComparison.OrdinalIgnoreCase))
-            .Select(pair => new ModuleSurface(
-                pair.Key[McpSettingKeys.SurfaceModulePrefix.Length..],
-                Normalize(pair.Value)))
-            .Where(item => item.Mode != "inherit")
-            .OrderBy(item => item.Module, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-    /// <summary>把设置值收成 compact / full / inherit 三种。</summary>
-    public static string Normalize(string? value)
-        => string.Equals(value?.Trim(), "compact", StringComparison.OrdinalIgnoreCase) ? "compact"
-            : string.Equals(value?.Trim(), "full", StringComparison.OrdinalIgnoreCase) ? "full"
-            : "inherit";
 }
 
 /// <summary>Centralized, fail-closed visibility policy for the Portunus MCP projection.</summary>
