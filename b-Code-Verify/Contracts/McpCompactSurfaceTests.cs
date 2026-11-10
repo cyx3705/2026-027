@@ -9,239 +9,125 @@ using Xunit;
 
 namespace HistoryPortunus.Contracts;
 
-/// <summary>
-/// mcp.surface=compact：tools/list 只列 find / call 两个元工具，客户端常驻上下文与指令数无关。
-/// 这里守住两件事：列法变了，能调什么没变（call 与直调同一套策略、确认判断）。
-/// </summary>
+// REQ-DIANA-RELAY-001：精简只影响展示，发现和统一调用归 Diana。
 [Collection(TestCollections.Gateway)]
 public sealed class McpCompactSurfaceTests
 {
     [Fact]
-    public async Task FullListsEveryCommandAndCompactListsOnlyTheTwoMetaTools()
+    public async Task CompactNeverAddsPortunusToolsAndRetiredCallsAreRejected()
     {
-        using var fixture = new Fixture();
-        using (var full = await fixture.RpcAsync("tools/list", new { }))
+        using var f = new Fixture();
+        using (var full = await f.RpcAsync("tools/list", new { }))
+            Assert.Equal(new[] { "probe_echo", "probe_write" }, ToolNames(full));
+        f.SetSurface("compact");
+        using (var compact = await f.RpcAsync("tools/list", new { }))
+            Assert.Empty(ToolNames(compact));
+        foreach (var name in new[] { "portunus_find", "portunus_call" })
         {
-            var names = ToolNames(full);
-            Assert.Contains("probe_echo", names);
-            Assert.Contains("probe_write", names);
-            Assert.DoesNotContain(McpGateway.FindToolName, names);
+            using var retired = await f.RpcAsync("tools/call", new { name, arguments = new { name = "probe_echo" } });
+            Assert.Equal(-32602, retired.RootElement.GetProperty("error").GetProperty("code").GetInt32());
         }
-
-        fixture.SetSurface("compact");
-        using var compact = await fixture.RpcAsync("tools/list", new { });
-        Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(compact));
-        Assert.Contains("probe(2)", compact.RootElement.ToString(), StringComparison.Ordinal);
     }
 
     [Fact]
-    public async Task FindReturnsSchemaForMatchesAndOnlyNamesWithoutQuery()
+    public async Task FullCatalogIgnoresDisplayButPreservesPolicyAndDangerFiltering()
     {
-        using var fixture = new Fixture(surface: "compact");
-
-        var hit = await fixture.CallTextAsync(McpGateway.FindToolName, new { query = "echo" });
-        Assert.Equal(1, hit.GetProperty("total").GetInt32());
-        var tool = hit.GetProperty("tools")[0];
-        Assert.Equal("probe.echo", tool.GetProperty("name").GetString());
-        Assert.True(tool.GetProperty("inputSchema").GetProperty("properties").TryGetProperty("text", out _));
-
-        // 多词须全部命中
-        var none = await fixture.CallTextAsync(McpGateway.FindToolName, new { query = "echo write" });
-        Assert.Equal(0, none.GetProperty("total").GetInt32());
-
-        var overview = await fixture.CallTextAsync(McpGateway.FindToolName, new { });
-        Assert.False(overview.TryGetProperty("tools", out _));
-        Assert.Equal(2, overview.GetProperty("domains").GetProperty("probe").GetArrayLength());
-
-        var limited = await fixture.CallTextAsync(McpGateway.FindToolName, new { query = "probe", limit = 1 });
-        Assert.Equal(1, limited.GetProperty("tools").GetArrayLength());
-        Assert.Equal(1, limited.GetProperty("more").GetArrayLength());
-    }
-
-    [Fact]
-    public async Task CallExecutesByCommandOrToolNameWithArguments()
-    {
-        using var fixture = new Fixture(surface: "compact");
-        foreach (var name in new[] { "probe.echo", "probe_echo" })
+        using var f = new Fixture("compact");
+        using (var all = await f.RpcAsync("tools/list", FullCatalog()))
         {
-            using var called = await fixture.RpcAsync("tools/call", new
-            {
-                name = McpGateway.CallToolName,
-                arguments = new { name, arguments = new { text = "中文 x=1" } },
-            });
-            var result = called.RootElement.GetProperty("result");
-            Assert.False(result.GetProperty("isError").GetBoolean(), result.ToString());
+            Assert.True(all.RootElement.GetProperty("result").GetProperty("_meta").GetProperty("historyvulcan/fullCatalog").GetBoolean());
+            Assert.Equal(new[] { "probe_echo", "probe_write" }, ToolNames(all));
+        }
+        f.Settings.Set(McpSettingKeys.Policy, "readonly");
+        using (var read = await f.RpcAsync("tools/list", FullCatalog()))
+            Assert.Equal(new[] { "probe_echo" }, ToolNames(read));
+        using var denied = await f.RpcAsync("tools/call", new { name = "probe_write" });
+        Assert.True(denied.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        Assert.Equal(0, f.Writes);
+        using var ask = await f.RpcAsync("tools/call", new { name = "probe_ask" });
+        Assert.True(ask.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+    }
+
+    [Fact]
+    public async Task ModuleOverrideAndModuleDefaultOnlyChangeDisplay()
+    {
+        using var f = new Fixture();
+        AddOtherModule(f);
+        f.Catalog.SetSource("probe.echo", "module:Probe");
+        f.Catalog.SetSource("probe.write", "module:Probe");
+        f.SetSurface("full", ("Probe", "compact"));
+        using (var listed = await f.RpcAsync("tools/list", new { }))
+            Assert.Equal(new[] { "other_ping" }, ToolNames(listed));
+        using (var all = await f.RpcAsync("tools/list", FullCatalog()))
+            Assert.Contains("probe_echo", ToolNames(all));
+        using (var call = await f.RpcAsync("tools/call", new { name = "probe_echo", arguments = new { text = "中文 x=1" } }))
+        {
+            var result = call.RootElement.GetProperty("result");
+            Assert.False(result.GetProperty("isError").GetBoolean());
             Assert.Equal("中文 x=1", result.GetProperty("structuredContent").GetProperty("data").GetString());
         }
+        f.SetSurface("compact", ("Other", "full"));
+        using (var expanded = await f.RpcAsync("tools/list", new { }))
+            Assert.Equal(new[] { "other_ping" }, ToolNames(expanded));
+        f.SetSurface("full");
+        f.SetModuleDefault("compact");
+        using var defaults = await f.RpcAsync("tools/list", new { });
+        Assert.Empty(ToolNames(defaults));
     }
 
     [Fact]
-    public async Task CallObeysTheSamePolicyAsDirectCalls()
+    public async Task DianaRemainsVisibleAndCachedPlanSurvivesReload()
     {
-        using var fixture = new Fixture(surface: "compact");
-        fixture.Settings.Set(McpSettingKeys.Policy, "readonly");
-
-        using var write = await fixture.RpcAsync("tools/call", new
+        using var f = new Fixture("compact");
+        foreach (var name in new[] { "diana.relay.find", "diana.relay.call" })
         {
-            name = McpGateway.CallToolName,
-            arguments = new { name = "probe.write" },
-        });
-        var result = write.RootElement.GetProperty("result");
-        Assert.True(result.GetProperty("isError").GetBoolean());
-        Assert.Equal(0, fixture.Writes);
-
-        // Ask 级与硬排除的指令经 call 也够不着
-        using (var ask = await fixture.RpcAsync("tools/call", new
-               {
-                   name = McpGateway.CallToolName,
-                   arguments = new { name = "probe.ask" },
-               }))
-        {
-            Assert.True(ask.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+            f.Registry.Register(new CommandDescriptor { Name = name, Domain = "diana", Summary = "Diana 统一入口",
+                Readonly = true, Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("ok")) });
+            f.Catalog.SetSource(name, "module:HistoryDiana");
         }
-
-        using var hidden = await fixture.RpcAsync("tools/call", new
-        {
-            name = McpGateway.CallToolName,
-            arguments = new { name = "portunus.mcp.config" },
-        });
-        Assert.True(hidden.RootElement.TryGetProperty("error", out _), hidden.RootElement.ToString());
+        using (var before = await f.RpcAsync("tools/list", new { }))
+            Assert.Equal(new[] { "diana_relay_call", "diana_relay_find" }, ToolNames(before));
+        f.SetSurfaceAvailable(false);
+        using var during = await f.RpcAsync("tools/list", new { });
+        Assert.Equal(new[] { "diana_relay_call", "diana_relay_find" }, ToolNames(during));
+        Assert.Equal("缓存", f.Gateway.SurfaceSource);
     }
 
-    [Theory]
-    [InlineData("{}")]
-    [InlineData("{\"name\":\"portunus_call\"}")]
-    [InlineData("{\"name\":\"portunus_find\"}")]
-    [InlineData("{\"name\":\"probe.echo\",\"arguments\":\"text=1\"}")]
-    public async Task MalformedOrNestedCallIsRejected(string arguments)
+    [Fact]
+    public async Task ReadonlyKeepsDianaRelayCallableButStillRejectsInnerWrites()
     {
-        using var fixture = new Fixture(surface: "compact");
-        using var args = JsonDocument.Parse(arguments);
-        using var response = await fixture.RpcAsync("tools/call", new
+        using var f = new Fixture("compact");
+        f.Registry.Register(new CommandDescriptor
         {
-            name = McpGateway.CallToolName,
-            arguments = args.RootElement,
+            Name = "diana.relay.call", Domain = "diana", Summary = "Diana 统一调用入口",
+            Parameters = [new ParameterSpec { Name = "name", Required = true, Description = "目标工具名" }],
+            Handler = async ctx =>
+            {
+                using var inner = await f.RpcAsync("tools/call", new { name = ctx.RequireString("name"), arguments = new { text = "read" } });
+                var result = inner.RootElement.GetProperty("result");
+                return result.GetProperty("isError").GetBoolean() ? CommandResult.Fail("denied") : CommandResult.Ok("read");
+            },
         });
-        Assert.Equal(-32602, response.RootElement.GetProperty("error").GetProperty("code").GetInt32());
+        f.Catalog.SetSource("diana.relay.call", "module:HistoryDiana");
+        f.Settings.Set(McpSettingKeys.Policy, "readonly");
+        using (var listed = await f.RpcAsync("tools/list", new { }))
+            Assert.Contains("diana_relay_call", ToolNames(listed));
+        foreach (var target in new[] { "probe_echo", "probe_write" })
+        {
+            using var call = await f.RpcAsync("tools/call", new { name = "diana_relay_call", arguments = new { name = target } });
+            Assert.Equal(target == "probe_write", call.RootElement.GetProperty("result").GetProperty("isError").GetBoolean());
+        }
+        Assert.Equal(0, f.Writes);
     }
 
     [Fact]
     public async Task SurfaceIsOwnedByDianaSoConfigRejectsIt()
     {
-        using var fixture = new Fixture();
-        var set = await fixture.Bus.ExecuteAsync("portunus.mcp.config key=surface value=COMPACT", "test");
-        Assert.False(set.Success);
-        Assert.Equal("full", fixture.Gateway.Surface);
+        using var f = new Fixture();
+        Assert.False((await f.Bus.ExecuteAsync("portunus.mcp.config key=surface value=compact", "test")).Success);
     }
 
-    [Fact]
-    public async Task ModuleOverrideHidesOnlyThatModulesToolsAndKeepsThemCallable()
-    {
-        using var fixture = new Fixture();
-        AddOtherModule(fixture);
-        fixture.Catalog.SetSource("probe.echo", "module:Probe");
-        fixture.Catalog.SetSource("probe.write", "module:Probe");
-
-        using (var full = await fixture.RpcAsync("tools/list", new { }))
-        {
-            var names = ToolNames(full);
-            Assert.Contains("probe_echo", names);
-            Assert.Contains("other_ping", names);
-            Assert.DoesNotContain(McpGateway.FindToolName, names);
-        }
-
-        fixture.SetSurface("full", ("Probe", "compact"));
-        using (var selective = await fixture.RpcAsync("tools/list", new { }))
-        {
-            var names = ToolNames(selective);
-            Assert.DoesNotContain("probe_echo", names);
-            Assert.DoesNotContain("probe_write", names);
-            Assert.Contains("other_ping", names);
-            Assert.Contains(McpGateway.FindToolName, names);
-            Assert.Contains(McpGateway.CallToolName, names);
-        }
-
-        // 隐去的模块仍在同一个查找面里。
-        var hit = await fixture.CallTextAsync(McpGateway.FindToolName, new { query = "echo" });
-        Assert.Equal("probe.echo", hit.GetProperty("tools")[0].GetProperty("name").GetString());
-
-        // 也仍能经 call 执行。
-        using var called = await fixture.RpcAsync("tools/call", new
-        {
-            name = McpGateway.CallToolName,
-            arguments = new { name = "probe.echo", arguments = new { text = "hidden" } },
-        });
-        var result = called.RootElement.GetProperty("result");
-        Assert.False(result.GetProperty("isError").GetBoolean(), result.ToString());
-        Assert.Equal("hidden", result.GetProperty("structuredContent").GetProperty("data").GetString());
-    }
-
-    [Fact]
-    public async Task GlobalCompactCanExpandASingleModule()
-    {
-        using var fixture = new Fixture(surface: "compact");
-        AddOtherModule(fixture);
-        fixture.Catalog.SetSource("probe.echo", "module:Probe");
-        fixture.SetSurface("compact", ("Other", "full"));
-
-        using var response = await fixture.RpcAsync("tools/list", new { });
-        var names = ToolNames(response);
-        Assert.Contains("other_ping", names);
-        Assert.DoesNotContain("probe_echo", names);
-        Assert.Contains(McpGateway.FindToolName, names);
-        Assert.Contains(McpGateway.CallToolName, names);
-    }
-
-    [Fact]
-    public async Task ModuleDefaultKeepsClearedOrNewModulesCompact()
-    {
-        using var fixture = new Fixture();
-        AddOtherModule(fixture);
-        fixture.Catalog.SetSource("probe.echo", "module:Probe");
-        fixture.Catalog.SetSource("probe.write", "module:Probe");
-        fixture.SetModuleDefault("compact");
-
-        using var response = await fixture.RpcAsync("tools/list", new { });
-        var names = ToolNames(response);
-        Assert.DoesNotContain("probe_echo", names);
-        Assert.DoesNotContain("other_ping", names);
-        Assert.Contains(McpGateway.FindToolName, names);
-    }
-
-    [Fact]
-    public async Task SurfacePlanIsRememberedWhileDianaIsReloading()
-    {
-        using var fixture = new Fixture(surface: "compact");
-        using (var before = await fixture.RpcAsync("tools/list", new { }))
-            Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(before));
-
-        // 模块热装时 Diana 会先卸再装：这段窗口里 tools/list 仍必须按上次计划列，不能回到完整。
-        fixture.SetSurfaceAvailable(false);
-        using var during = await fixture.RpcAsync("tools/list", new { });
-        Assert.Equal([McpGateway.FindToolName, McpGateway.CallToolName], ToolNames(during));
-        Assert.Equal("缓存", fixture.Gateway.SurfaceSource);
-    }
-
-    [Fact]
-    public async Task DianaStaysExpandedEvenWhenGlobalIsCompact()
-    {
-        using var fixture = new Fixture(surface: "compact");
-        fixture.Registry.Register(new CommandDescriptor
-        {
-            Name = "diana.ping",
-            Domain = "diana",
-            Summary = "Diana 自己的只读指令",
-            Readonly = true,
-            Handler = CommandDescriptor.Sync(_ => CommandResult.Ok("pong")),
-        });
-        fixture.Catalog.SetSource("diana.ping", "module:HistoryDiana");
-
-        using var response = await fixture.RpcAsync("tools/list", new { });
-        var names = ToolNames(response);
-        Assert.Contains("diana_ping", names);
-        Assert.Contains(McpGateway.FindToolName, names);
-        Assert.DoesNotContain("probe_echo", names);
-    }
+    private static object FullCatalog() => new { _meta = new Dictionary<string, bool> { ["historyvulcan/fullCatalog"] = true } };
 
     private static void AddOtherModule(Fixture fixture)
     {
@@ -280,6 +166,7 @@ public sealed class McpCompactSurfaceTests
             Registry.Register(new CommandDescriptor
             {
                 Name = "diana.surface.plan",
+                HiddenReason = "Portunus 内部取计划，不对远端暴露",
                 Domain = "diana",
                 Summary = "测试用列法计划",
                 Readonly = true,
@@ -370,16 +257,6 @@ public sealed class McpCompactSurfaceTests
             using var response = await _client.PostAsync("mcp", content);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        }
-
-        /// <summary>调一个返回 JSON 文本的工具，解析第一段文本。</summary>
-        public async Task<JsonElement> CallTextAsync(string tool, object arguments)
-        {
-            using var response = await RpcAsync("tools/call", new { name = tool, arguments });
-            var result = response.RootElement.GetProperty("result");
-            Assert.False(result.GetProperty("isError").GetBoolean(), result.ToString());
-            var text = result.GetProperty("content")[0].GetProperty("text").GetString()!;
-            return JsonDocument.Parse(text).RootElement.Clone();
         }
 
         public void Dispose()

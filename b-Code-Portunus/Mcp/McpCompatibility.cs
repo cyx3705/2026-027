@@ -247,7 +247,9 @@ public static class McpExposurePolicy
     public static bool IsReadonlyAllowed(string commandName)
         => commandName.Equals("vulcan.command.list", StringComparison.OrdinalIgnoreCase)
            || commandName.Equals("vulcan.command.show", StringComparison.OrdinalIgnoreCase)
-           || commandName.Equals("vulcan.command.domains", StringComparison.OrdinalIgnoreCase);
+           || commandName.Equals("vulcan.command.domains", StringComparison.OrdinalIgnoreCase)
+           // REQ-DIANA-RELAY-001：中继入口本身不写业务状态；内层仍重入 MCP 并校验当前策略。
+           || commandName.Equals("diana.relay.call", StringComparison.OrdinalIgnoreCase);
 
     public static string? HardExclusionReason(CatalogCommand descriptor)
     {

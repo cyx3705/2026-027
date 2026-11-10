@@ -490,7 +490,7 @@ public sealed partial class McpGateway : IDisposable
             {
                 "initialize" => HandleInitialize(context.Response, session, id, hasParams ? prms : null),
                 "ping" => RpcResult(id, new JsonObject()),
-                "tools/list" => HandleToolsList(id),
+                "tools/list" => HandleToolsList(id, hasParams ? prms : null),
                 "tools/call" => await HandleToolsCallAsync(session, id, hasParams ? prms : null).ConfigureAwait(false),
                 _ => RpcError(id, -32601, $"method not found: {method}"),
             };
@@ -549,9 +549,14 @@ public sealed partial class McpGateway : IDisposable
         });
     }
 
-    private JsonObject HandleToolsList(JsonNode? id)
+    private JsonObject HandleToolsList(JsonNode? id, JsonElement? parameters)
     {
-        var (expanded, hasCompact) = PartitionSurface();
+        // REQ-DIANA-RELAY-001：Diana 按需取完整策略目录，Portunus 不再注入自己的工具。
+        // 只绕过展示分流，VisibleTools 的可见性、readonly 与危险指令策略照旧。
+        var fullCatalog = parameters is { ValueKind: JsonValueKind.Object } p
+            && p.TryGetProperty("_meta", out var meta) && meta.ValueKind == JsonValueKind.Object
+            && meta.TryGetProperty("historyvulcan/fullCatalog", out var full) && full.ValueKind == JsonValueKind.True;
+        var expanded = fullCatalog ? VisibleTools() : PartitionSurface();
         var tools = new JsonArray();
         foreach (var t in expanded)
         {
@@ -566,40 +571,30 @@ public sealed partial class McpGateway : IDisposable
             });
         }
 
-        // 有模块进了精简形态时，附上 find/call 两个元工具；没有就保持逐条直列的旧形态。
-        if (hasCompact)
-        {
-            foreach (var tool in MetaTools())
-            {
-                if (tool is not null)
-                    tools.Add(tool.DeepClone());
-            }
-        }
-
-        return RpcResult(id, new JsonObject { ["tools"] = tools });
+        var result = new JsonObject { ["tools"] = tools };
+        if (fullCatalog)
+            result["_meta"] = new JsonObject { ["historyvulcan/fullCatalog"] = true };
+        return RpcResult(id, result);
     }
 
     /// <summary>
     /// tools/list 的逐模块分流：生效列法为 compact 的模块不逐个列出，其余模块照旧直列。
-    /// 只要有模块被隐去，就补 find/call 两个入口——查找与调用仍覆盖全部可见工具。
+    /// 统一发现和调用属于 Diana；这里只执行展示计划，不附加传输层元工具。
     /// </summary>
-    private (IReadOnlyList<McpToolInfo> Expanded, bool HasCompact) PartitionSurface()
+    private IReadOnlyList<McpToolInfo> PartitionSurface()
     {
         var plan = ReadSurfacePlan();
         var expanded = new List<McpToolInfo>();
-        var hasCompact = false;
         foreach (var tool in VisibleTools())
         {
             var module = _catalog.TryGet(tool.CommandName, out var command)
                 ? ModuleOf(command)
                 : null;
-            if (plan.IsCompact(module))
-                hasCompact = true;
-            else
+            if (!plan.IsCompact(module))
                 expanded.Add(tool);
         }
 
-        return (expanded, hasCompact);
+        return expanded;
     }
 
     /// <summary>指令所属模块（目录来源形如 <c>module:Norma</c>）；宿主框架指令返回 null。</summary>
@@ -649,31 +644,6 @@ public sealed partial class McpGateway : IDisposable
             }
 
             var toolName = nameEl.GetString()!;
-
-            // 精简形态的两个元工具(两种形态下都受理):find 只读目录;
-            // call 拆出内层工具名与参数后,走下面与直调完全相同的策略、确认与留痕。
-            if (toolName.Equals(FindToolName, StringComparison.Ordinal))
-            {
-                if (GetExporter() == null)
-                {
-                    Audit(FindToolName, auditArguments, "拒绝");
-                    return RpcError(id, -32603, "宿主总线未就绪");
-                }
-                Audit(FindToolName, auditArguments, "成功");
-                return RpcResult(id, HandleFind(arguments));
-            }
-
-            if (toolName.Equals(CallToolName, StringComparison.Ordinal))
-            {
-                if (!TryUnwrapCall(arguments, out var innerName, out var innerArguments))
-                {
-                    Audit(CallToolName, auditArguments, "拒绝");
-                    return RpcError(id, -32602, $"{CallToolName} 需要 name(工具名或指令名)与可选的 arguments 对象");
-                }
-                toolName = innerName;
-                arguments = innerArguments;
-                auditArguments = RedactUnknownAuditArguments(arguments);
-            }
 
             if (!IsValidToolName(toolName))
             {
