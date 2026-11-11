@@ -918,6 +918,11 @@ public sealed partial class McpGateway : IDisposable
         }
 
         var result = await execTask.ConfigureAwait(false);
+        if (result.Success && CompactCommandList.Is(tool.CommandName))
+        {
+            var table = CompactCommandList.Render(result.Data);
+            result = table == null ? CommandResult.Fail("宿主指令目录格式无效") : CommandResult.Ok(table);
+        }
         _lastCall = $"{tool.ToolName} → {(result.Success ? "成功" : "失败")}";
         audit(tool.ToolName, argsText, Note(relayNote, result.Success ? "成功" : "失败"));
 

@@ -135,6 +135,74 @@ public sealed class McpCommandBusIntegrationTests
         }
     }
 
+    // REQ-PORTUNUS-CATALOG-001：同名同域，只调整 MCP 的描述和返回；内层总线完整目录仍可用。
+    [Fact]
+    public async Task CommandListProjectsOneShortTableAndLiveCapabilityOverview()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "CompactCatalog", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        try
+        {
+            var registry = new TestRegistrar();
+            var catalog = new TestCatalog(registry);
+            string? filter = null;
+            var summary = new string('中', 29) + "😀更多内容|下一行\n结束";
+            var fullRows = JsonSerializer.SerializeToElement(new[] {
+                new { commandName = "probe.data.read", summary, parameters = new[] { "private-details" }, source = "module" },
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = "vulcan.command.list", Summary = "完整注册表", Readonly = true,
+                Parameters = [new ParameterSpec { Name = "filter", Description = "筛选" }],
+                Handler = CommandDescriptor.Sync(ctx =>
+                {
+                    filter = ctx.GetString("filter");
+                    return CommandResult.Ok("旧长正文 private-details", fullRows);
+                }),
+            });
+            registry.Register(new CommandDescriptor
+            {
+                Name = "probe.data.read", Summary = "读取项目资料", Readonly = true,
+                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok()),
+            });
+            var settings = new MemorySettings();
+            settings.Set(McpSettingKeys.Policy, "standard");
+            var bus = new TestCommandBus(registry);
+            using var gateway = new McpGateway(() => bus, catalog, settings, new NullLog(),
+                new NullAudit(), new PromptGovernanceStore(root, new NullLog()), new HostIdentity("test", "1"));
+            Assert.True(gateway.Start(FreePort()).Success);
+            using var client = CreateClient(gateway.Port);
+            using var tools = await PostRpcAsync(client, 1, "tools/list", new { });
+            var description = tools.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
+                .Single(tool => tool.GetProperty("name").GetString() == "vulcan_command_list")
+                .GetProperty("description").GetString()!;
+            Assert.Contains("probe=读取项目资料", description, StringComparison.Ordinal);
+            using var response = await PostRpcAsync(client, 2, "tools/call",
+                new { name = "vulcan_command_list", arguments = new { filter = "probe" } });
+            var result = response.RootElement.GetProperty("result");
+            Assert.False(result.GetProperty("isError").GetBoolean());
+            Assert.Equal("probe", filter);
+            var block = Assert.Single(result.GetProperty("content").EnumerateArray());
+            var table = block.GetProperty("text").GetString()!;
+            Assert.Contains("| probe.data.read | " + new string('中', 29) + "… |", table, StringComparison.Ordinal);
+            Assert.DoesNotContain("private-details", table, StringComparison.Ordinal);
+            Assert.False(result.TryGetProperty("structuredContent", out _));
+            var direct = await bus.InvokeAsync("vulcan.command.list", "module:catalog");
+            Assert.Equal(fullRows.GetRawText(), Assert.IsType<JsonElement>(direct.Data).GetRawText());
+            registry.Register(new CommandDescriptor
+            {
+                Name = "fresh.work.open", Summary = "打开工作区", Readonly = true,
+                Handler = CommandDescriptor.Sync(_ => CommandResult.Ok()),
+            });
+            using var refreshed = await PostRpcAsync(client, 3, "tools/list", new { });
+            var freshDescription = refreshed.RootElement.GetProperty("result").GetProperty("tools").EnumerateArray()
+                .Single(tool => tool.GetProperty("name").GetString() == "vulcan_command_list")
+                .GetProperty("description").GetString()!;
+            Assert.Contains("fresh=打开工作区", freshDescription, StringComparison.Ordinal);
+        }
+        finally { Directory.Delete(root, recursive: true); }
+    }
+
     private static void RegisterModuleProbe(
         TestRegistrar registry,
         TestCatalog catalog,

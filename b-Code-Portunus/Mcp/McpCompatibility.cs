@@ -324,10 +324,13 @@ public sealed class CommandSchemaExporter(ICommandCatalog catalog)
         var descriptions = DescriptionsProvider?.Invoke()
                            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        return catalog.All()
+        var commands = catalog.All()
             .Where(descriptor => McpExposurePolicy.HardExclusionReason(descriptor) == null)
             .OrderBy(descriptor => descriptor.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(descriptor => CreateTool(descriptor, descriptions, used))
+            .ToList();
+        return commands
+            .Select(descriptor => CreateTool(descriptor, descriptions, used,
+                CompactCommandList.Is(descriptor.Name) ? CompactCommandList.Describe(commands) : null))
             .ToList();
     }
 
@@ -364,7 +367,8 @@ public sealed class CommandSchemaExporter(ICommandCatalog catalog)
     private static McpToolInfo CreateTool(
         CatalogCommand descriptor,
         IReadOnlyDictionary<string, string> descriptions,
-        HashSet<string> used)
+        HashSet<string> used,
+        string? catalogDescription)
     {
         var defaultDescription = string.IsNullOrWhiteSpace(descriptor.Example)
             ? descriptor.Summary
@@ -407,7 +411,7 @@ public sealed class CommandSchemaExporter(ICommandCatalog catalog)
         return new McpToolInfo(
             MakeToolName(descriptor.Name, used),
             descriptor.Name,
-            customized ? description! : defaultDescription,
+            catalogDescription ?? (customized ? description! : defaultDescription),
             inputSchema,
             descriptor.Ask,
             defaultDescription,
