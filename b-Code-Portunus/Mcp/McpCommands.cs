@@ -46,7 +46,7 @@ public static class McpCommands
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
-        Summary = "启动 MCP 服务(仅 127.0.0.1;本机回环不持券,并自动对齐 Cursor mcp.json)",
+        Summary = "启动本机回环 MCP 服务并对齐配置",
         Example = "portunus.mcp.start port=8737",
         Parameters =
         [
@@ -93,7 +93,7 @@ public static class McpCommands
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
-        Summary = "查看 MCP 服务状态(运行/端口/策略/暴露工具数/累计调用/最近一次调用)",
+        Summary = "查看 MCP 监听、策略和调用状态",
         Example = "portunus.mcp.status",
         Handler = CommandDescriptor.Sync(_ =>
         {
@@ -134,7 +134,7 @@ public static class McpCommands
             HiddenReason = "防止远程递归管理或关闭 MCP 服务",
             Domain = "portunus",
             CommandClass = "mcp",
-            Summary = "查看或设置 MCP 随宿主自动监听(持久;省略 enabled 只查看)",
+            Summary = "查看或设置 MCP 是否随宿主监听",
             Example = "portunus.mcp.autostart enabled=true",
             Parameters =
             [
@@ -184,7 +184,7 @@ public static class McpCommands
             HiddenReason = "防止远程递归管理或关闭 MCP 服务",
             Domain = "portunus",
             CommandClass = "mcp",
-            Summary = "查看或设置 MCP 暴露策略、危险指令处置与工具列法(持久;省略 value 只查看)",
+            Summary = "查看或设置 MCP 暴露与确认策略",
             Example = "portunus.mcp.config key=policy value=readonly",
             Level = CommandLevel.Ask,
             ConfirmPrompt = ctx => ctx.Has("value")
@@ -265,7 +265,7 @@ public static class McpCommands
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
-        Summary = "查看指令的 MCP 工具形态(不带参列全部;带 name 输出单条完整 JSON Schema)",
+        Summary = "查看指令在 MCP 中的工具定义",
         Example = "portunus.mcp.schema name=vulcan.command.list",
         Parameters =
         [
@@ -324,7 +324,7 @@ public static class McpCommands
         HiddenReason = "防止远程递归管理或关闭 MCP 服务",
         Domain = "portunus",
         CommandClass = "mcp",
-        Summary = "调试:模拟 tools/call 反向解析——JSON arguments 组装为指令文本,exec=true 随即经总线执行",
+        Summary = "将 MCP 参数组装成指令，可选择执行",
         Example = "portunus.mcp.parse command=vulcan.command.list args=\"{}\" exec=true",
         Parameters =
         [
